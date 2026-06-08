@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Username Searcher — 跨平台用户名检索工具</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-deep: #09090b;
+            --bg-base: #0c0c10;
+            --bg-card: #12121a;
+            --bg-card-hover: #181825;
+            --bg-glass: rgba(255,255,255,0.03);
+            --border-subtle: rgba(255,255,255,0.06);
+            --border-glow: rgba(99,102,241,0.3);
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent: #6366f1;
+            --accent-glow: #818cf8;
+            --accent-deep: #4f46e5;
+            --green: #10b981;
+            --green-glow: #34d399;
+            --amber: #f59e0b;
+            --red: #ef4444;
+            --cyan: #06b6d4;
+            --purple: #a855f7;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html {
+            scroll-behavior: smooth;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(99,102,241,0.3) transparent;
+        }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.3); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(99,102,241,0.5); }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--bg-deep);
+            color: var(--text-primary);
+            line-height: 1.7;
+            overflow-x: hidden;
+        }
+
+        /* ---- Animated Background ---- */
+        .bg-grid {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            background-image:
+                linear-gradient(rgba(99,102,241,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(99,102,241,0.03) 1px, transparent 1px);
+            background-size: 60px 60px;
+            mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 20%, transparent 70%);
+        }
+
+        .bg-orb {
+            position: fixed;
+            border-radius: 50%;
+            filter: blur(120px);
+            pointer-events: none;
+            z-index: 0;
+            animation: orbFloat 20s ease-in-out infinite;
+        }
+        .bg-orb--1 {
+            width: 600px; height: 600px;
+            background: rgba(99,102,241,0.08);
+            top: -200px; left: -100px;
+            animation-delay: 0s;
+        }
+        .bg-orb--2 {
+            width: 500px; height: 500px;
+            background: rgba(6,182,212,0.06);
+            top: 40%; right: -150px;
+            animation-delay: -7s;
+        }
+        .bg-orb--3 {
+            width: 400px; height: 400px;
+            background: rgba(168,85,247,0.05);
+            bottom: -100px; left: 30%;
+            animation-delay: -14s;
+        }
+
+        @keyframes orbFloat {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            25% { transform: translate(60px, -40px) scale(1.05); }
+            50% { transform: translate(-30px, 20px) scale(0.95); }
+            75% { transform: translate(-50px, -30px) scale(1.02); }
+        }
+
+        /* ---- Layout ---- */
+        .wrapper {
+            position: relative;
+            z-index: 1;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        /* ---- Navigation ---- */
+        .nav {
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            z-index: 100;
+            background: rgba(12,12,16,0.75);
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
+            border-bottom: 1px solid var(--border-subtle);
+            transition: all 0.3s ease;
+        }
+        .nav.scrolled {
+            background: rgba(12,12,16,0.9);
+            box-shadow: 0 1px 20px rgba(0,0,0,0.3);
+        }
+        .nav-inner {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 60px;
+        }
+        .nav-logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 700;
+            font-size: 1.1rem;
+            color: var(--text-primary);
+            text-decoration: none;
+            letter-spacing: -0.01em;
+        }
+        .nav-logo-icon {
+            width: 34px; height: 34px;
+            background: linear-gradient(135deg, var(--accent), var(--purple));
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+            box-shadow: 0 0 20px rgba(99,102,241,0.25);
+        }
+        .nav-links {
+            display: flex;
+            gap: 32px;
+            list-style: none;
+        }
+        .nav-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: color 0.2s;
+            position: relative;
+        }
+        .nav-links a:hover { color: var(--text-primary); }
+        .nav-links a::after {
+            content: '';
+            position: absolute;
+            bottom: -4px; left: 0; right: 0;
+            height: 2px;
+            background: var(--accent);
+            transform: scaleX(0);
+            transition: transform 0.2s;
+            border-radius: 1px;
+        }
+        .nav-links a:hover::after { transform: scaleX(1); }
+        .nav-cta {
+            padding: 8px 20px;
+            background: linear-gradient(135deg, var(--accent), var(--accent-deep));
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.3s;
+            box-shadow: 0 0 20px rgba(99,102,241,0.2);
+        }
+        .nav-cta:hover {
+            box-shadow: 0 0 30px rgba(99,102,241,0.4);
+            transform: translateY(-1px);
+        }
+
+        /* ---- Hero ---- */
+        .hero {
+            padding: 160px 0 80px;
+            text-align: center;
+            position: relative;
+        }
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 16px;
+            background: var(--bg-glass);
+            border: 1px solid var(--border-subtle);
+            border-radius: 100px;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-bottom: 32px;
+            animation: fadeInUp 0.8s ease forwards;
+            opacity: 0;
+        }
+        .hero-badge-dot {
+            width: 7px; height: 7px;
+            background: var(--green);
+            border-radius: 50%;
+            box-shadow: 0 0 8px var(--green);
+            animation: pulse 2s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        .hero h1 {
+            font-size: clamp(2.5rem, 6vw, 4.5rem);
+            font-weight: 900;
+            letter-spacing: -0.03em;
+            line-height: 1.1;
+            margin-bottom: 24px;
+            animation: fadeInUp 0.8s 0.1s ease forwards;
+            opacity: 0;
+        }
+        .hero h1 .gradient-text {
+            background: linear-gradient(135deg, var(--accent-glow), var(--cyan), var(--purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .hero p {
+            font-size: 1.15rem;
+            color: var(--text-secondary);
+            max-width: 600px;
+            margin: 0 auto 40px;
+            animation: fadeInUp 0.8s 0.2s ease forwards;
+            opacity: 0;
+        }
+        .hero-actions {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            flex-wrap: wrap;
+            animation: fadeInUp 0.8s 0.3s ease forwards;
+            opacity: 0;
+        }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 28px;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 0.95rem;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.3s;
+            border: none;
+            font-family: inherit;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent), var(--accent-deep));
+            color: #fff;
+            box-shadow: 0 4px 24px rgba(99,102,241,0.3);
+        }
+        .btn-primary:hover {
+            box-shadow: 0 6px 32px rgba(99,102,241,0.5);
+            transform: translateY(-2px);
+        }
+        .btn-secondary {
+            background: var(--bg-glass);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-primary);
+            backdrop-filter: blur(10px);
+        }
+        .btn-secondary:hover {
+            border-color: var(--border-glow);
+            background: var(--bg-card-hover);
+            transform: translateY(-2px);
+        }
+
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(24px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ---- Stats Bar ---- */
+        .stats-bar {
+            display: flex;
+            justify-content: center;
+            gap: 48px;
+            padding: 40px 0 60px;
+            animation: fadeInUp 0.8s 0.4s ease forwards;
+            opacity: 0;
+        }
+        .stat-item {
+            text-align: center;
+        }
+        .stat-number {
+            font-size: 2.2rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            background: linear-gradient(135deg, var(--accent-glow), var(--cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .stat-label {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-top: 4px;
+        }
+
+        /* ---- Section Titles ---- */
+        .section {
+            padding: 80px 0;
+        }
+        .section-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--accent-glow);
+            margin-bottom: 12px;
+        }
+        .section-title {
+            font-size: 2.2rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            margin-bottom: 16px;
+        }
+        .section-desc {
+            color: var(--text-secondary);
+            font-size: 1.05rem;
+            max-width: 600px;
+            margin-bottom: 48px;
+        }
+
+        /* ---- Screenshot Gallery ---- */
+        .gallery {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 24px;
+        }
+        .gallery-item {
+            position: relative;
+            border-radius: 16px;
+            overflow: hidden;
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1.2);
+            cursor: pointer;
+            group: true;
+        }
+        .gallery-item:hover {
+            transform: translateY(-6px);
+            border-color: var(--border-glow);
+            box-shadow: 0 20px 60px rgba(99,102,241,0.15), 0 0 80px rgba(99,102,241,0.05);
+        }
+        .gallery-item img {
+            width: 100%;
+            display: block;
+            transition: transform 0.6s cubic-bezier(0.25, 0.8, 0.25, 1.2);
+        }
+        .gallery-item:hover img {
+            transform: scale(1.03);
+        }
+        .gallery-overlay {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(to top, rgba(9,9,11,0.9) 0%, transparent 60%);
+            display: flex;
+            align-items: flex-end;
+            padding: 24px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .gallery-item:hover .gallery-overlay {
+            opacity: 1;
+        }
+        .gallery-tag {
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--accent-glow);
+            background: rgba(99,102,241,0.15);
+            padding: 4px 10px;
+            border-radius: 4px;
+            margin-bottom: 6px;
+            display: inline-block;
+        }
+        .gallery-label {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        /* ---- Lightbox ---- */
+        .lightbox {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            background: rgba(0,0,0,0.92);
+            backdrop-filter: blur(10px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+            cursor: pointer;
+        }
+        .lightbox.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+        .lightbox img {
+            max-width: 90vw;
+            max-height: 85vh;
+            border-radius: 12px;
+            box-shadow: 0 40px 120px rgba(99,102,241,0.2);
+            transform: scale(0.9);
+            transition: transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1.2);
+        }
+        .lightbox.active img {
+            transform: scale(1);
+        }
+
+        /* ---- Feature Cards ---- */
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+        }
+        .feature-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 16px;
+            padding: 28px;
+            transition: all 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+        .feature-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--accent), transparent);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .feature-card:hover::before { opacity: 1; }
+        .feature-card:hover {
+            border-color: var(--border-glow);
+            transform: translateY(-4px);
+            box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+        }
+        .feature-icon {
+            width: 44px; height: 44px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.3rem;
+            margin-bottom: 16px;
+        }
+        .feature-icon--blue { background: rgba(99,102,241,0.12); color: var(--accent-glow); }
+        .feature-icon--green { background: rgba(16,185,129,0.12); color: var(--green-glow); }
+        .feature-icon--cyan { background: rgba(6,182,212,0.12); color: var(--cyan); }
+        .feature-icon--amber { background: rgba(245,158,11,0.12); color: var(--amber); }
+        .feature-icon--purple { background: rgba(168,85,247,0.12); color: var(--purple); }
+        .feature-icon--red { background: rgba(239,68,68,0.12); color: var(--red); }
+        .feature-card h3 {
+            font-size: 1.05rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+            letter-spacing: -0.01em;
+        }
+        .feature-card p {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            line-height: 1.6;
+        }
+
+        /* ---- Status Table ---- */
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+        }
+        .status-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            padding: 24px;
+            text-align: center;
+            transition: all 0.3s;
+        }
+        .status-card:hover {
+            border-color: var(--border-glow);
+            transform: translateY(-2px);
+        }
+        .status-icon {
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+        .status-name {
+            font-weight: 700;
+            font-size: 0.95rem;
+            margin-bottom: 4px;
+        }
+        .status-desc {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+        }
+
+        /* ---- Code Block ---- */
+        .code-block {
+            background: #0d0d14;
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+        }
+        .code-block-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 20px;
+            background: rgba(255,255,255,0.02);
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .code-dot { width: 10px; height: 10px; border-radius: 50%; }
+        .code-dot--red { background: #ff5f57; }
+        .code-dot--yellow { background: #febc2e; }
+        .code-dot--green { background: #28c840; }
+        .code-block-title {
+            margin-left: 8px;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .code-block pre {
+            padding: 20px 24px;
+            margin: 0;
+            overflow-x: auto;
+        }
+        .code-block code {
+            font-family: 'JetBrains Mono', 'Cascadia Code', monospace;
+            font-size: 0.85rem;
+            line-height: 1.8;
+            color: #e2e8f0;
+        }
+        .code-block .hl-keyword { color: #c792ea; }
+        .code-block .hl-string { color: #c3e88d; }
+        .code-block .hl-comment { color: #546e7a; }
+        .code-block .hl-func { color: #82aaff; }
+        .code-block .hl-num { color: #f78c6c; }
+        .code-copy {
+            position: absolute;
+            top: 12px; right: 20px;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-secondary);
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-size: 0.7rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+        .code-copy:hover { background: rgba(255,255,255,0.1); color: #fff; }
+
+        /* ---- CTA Section ---- */
+        .cta-section {
+            text-align: center;
+            padding: 100px 0;
+            position: relative;
+        }
+        .cta-section::before {
+            content: '';
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 500px; height: 500px;
+            background: radial-gradient(circle, rgba(99,102,241,0.08) 0%, transparent 70%);
+            pointer-events: none;
+        }
+        .cta-section h2 {
+            font-size: 2.4rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            margin-bottom: 16px;
+            position: relative;
+        }
+        .cta-section p {
+            color: var(--text-secondary);
+            margin-bottom: 32px;
+            font-size: 1.05rem;
+            position: relative;
+        }
+        .cta-section .btn {
+            position: relative;
+        }
+
+        /* ---- Footer ---- */
+        .footer {
+            border-top: 1px solid var(--border-subtle);
+            padding: 32px 0;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.8rem;
+        }
+        .footer a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        .footer a:hover { color: var(--accent-glow); }
+
+        /* ---- Scroll Reveal ---- */
+        .reveal {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: all 0.7s cubic-bezier(0.25, 0.8, 0.25, 1.2);
+        }
+        .reveal.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* ---- Responsive ---- */
+        @media (max-width: 900px) {
+            .features-grid { grid-template-columns: repeat(2, 1fr); }
+            .gallery { grid-template-columns: 1fr; }
+            .status-grid { grid-template-columns: repeat(2, 1fr); }
+            .stats-bar { gap: 32px; }
+            .nav-links { display: none; }
+            .hero h1 { font-size: 2.2rem; }
+        }
+        @media (max-width: 600px) {
+            .features-grid { grid-template-columns: 1fr; }
+            .status-grid { grid-template-columns: 1fr 1fr; }
+            .hero { padding: 120px 0 60px; }
+            .stats-bar { gap: 20px; flex-wrap: wrap; }
+            .hero-actions { flex-direction: column; align-items: center; }
+        }
+
+        /* ---- Parallax Glow ---- */
+        .glow-follow {
+            position: fixed;
+            width: 500px; height: 500px;
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 0;
+            background: radial-gradient(circle, rgba(99,102,241,0.06) 0%, transparent 70%);
+            transform: translate(-50%, -50%);
+            transition: opacity 0.3s;
+        }
+    </style>
+</head>
+<body>
+    <!-- Background Effects -->
+    <div class="bg-grid"></div>
+    <div class="bg-orb bg-orb--1"></div>
+    <div class="bg-orb bg-orb--2"></div>
+    <div class="bg-orb bg-orb--3"></div>
+    <div class="glow-follow" id="glowFollow"></div>
+
+    <!-- Navigation -->
+    <nav class="nav" id="navbar">
+        <div class="nav-inner">
+            <a href="#" class="nav-logo">
+                <span class="nav-logo-icon">🔍</span>
+                Username Searcher
+            </a>
+            <ul class="nav-links">
+                <li><a href="#features">功能特性</a></li>
+                <li><a href="#gallery">界面预览</a></li>
+                <li><a href="#install">安装指南</a></li>
+                <li><a href="#status">状态说明</a></li>
+            </ul>
+            <a href="https://github.com/qwerasdzx-123/username_searcher" class="nav-cta" target="_blank">
+                ⭐ GitHub
+            </a>
+        </div>
+    </nav>
+
+    <!-- Hero -->
+    <section class="hero">
+        <div class="wrapper">
+            <div class="hero-badge">
+                <span class="hero-badge-dot"></span>
+                覆盖 999+ 社交平台 · 开源免费
+            </div>
+            <h1>
+                跨平台<br>
+                <span class="gradient-text">用户名检索工具</span>
+            </h1>
+            <p>
+                一键检测任意用户名在近千个社交平台上的注册情况，
+                精准匹配、智能代理、实时反馈，让信息搜集从未如此高效。
+            </p>
+            <div class="hero-actions">
+                <a href="https://github.com/qwerasdzx-123/username_searcher" class="btn btn-primary" target="_blank">
+                    <span>⭐ Star on GitHub</span>
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+                </a>
+                <a href="#install" class="btn btn-secondary">
+                    📦 快速开始
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Stats Bar -->
+    <div class="stats-bar wrapper">
+        <div class="stat-item">
+            <div class="stat-number">999+</div>
+            <div class="stat-label">社交平台覆盖</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-number">3</div>
+            <div class="stat-label">平台分类层级</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-number">4</div>
+            <div class="stat-label">结果状态分类</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-number">2</div>
+            <div class="stat-label">查询模式</div>
+        </div>
+    </div>
+
+    <!-- Features -->
+    <section class="section" id="features">
+        <div class="wrapper">
+            <div class="section-label reveal">功能特性</div>
+            <h2 class="section-title reveal">为什么选择 Username Searcher</h2>
+            <p class="section-desc reveal">
+                专为 OSINT 和信息搜集场景设计，提供高效、可靠、灵活的用户名跨平台检索体验。
+            </p>
+            <div class="features-grid">
+                <div class="feature-card reveal">
+                    <div class="feature-icon feature-icon--blue">🌐</div>
+                    <h3>海量平台覆盖</h3>
+                    <p>内置 999+ 社交网站配置，涵盖热门平台、普通网站及小众社区，支持按热度筛选。</p>
+                </div>
+                <div class="feature-card reveal">
+                    <div class="feature-icon feature-icon--green">🎯</div>
+                    <h3>精准 & 模糊匹配</h3>
+                    <p>双重查询模式：精准匹配快速验证用户名存在性，模糊匹配发现相关变体。</p>
+                </div>
+                <div class="feature-card reveal">
+                    <div class="feature-icon feature-icon--cyan">⚡</div>
+                    <h3>智能并发控制</h3>
+                    <p>1-20 可调并发数，在速度与稳定性之间自由平衡，避免请求过载被限流。</p>
+                </div>
+                <div class="feature-card reveal">
+                    <div class="feature-icon feature-icon--amber">🔀</div>
+                    <h3>双代理模式</h3>
+                    <p>支持本地代理和直连两种网络请求方式，灵活应对不同网络环境。</p>
+                </div>
+                <div class="feature-card reveal">
+                    <div class="feature-icon feature-icon--purple">🔍</div>
+                    <h3>结果智能筛选</h3>
+                    <p>按已注册、不存在、需手工验证、错误信息四类状态筛选，快速定位目标结果。</p>
+                </div>
+                <div class="feature-card reveal">
+                    <div class="feature-icon feature-icon--red">📝</div>
+                    <h3>本地日志记录</h3>
+                    <p>自动将每次检索日志按日期保存到本地文件，便于事后审计和分析。</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Screenshot Gallery -->
+    <section class="section" id="gallery">
+        <div class="wrapper">
+            <div class="section-label reveal">界面预览</div>
+            <h2 class="section-title reveal">直观的操作体验</h2>
+            <p class="section-desc reveal">
+                精心设计的暗色主题界面，实时进度反馈，点击图片可查看大图。
+            </p>
+            <div class="gallery">
+                <div class="gallery-item reveal" onclick="openLightbox('截图1.jpg')">
+                    <img src="截图1.jpg" alt="用户名检索工具主界面" loading="lazy">
+                    <div class="gallery-overlay">
+                        <div>
+                            <span class="gallery-tag">界面截图</span>
+                            <div class="gallery-label">搜索主界面 — 输入用户名开始检索</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="gallery-item reveal" onclick="openLightbox('截图2.jpg')">
+                    <img src="截图2.jpg" alt="用户名检索结果展示" loading="lazy">
+                    <div class="gallery-overlay">
+                        <div>
+                            <span class="gallery-tag">界面截图</span>
+                            <div class="gallery-label">检索结果 — 多平台状态一目了然</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Lightbox -->
+    <div class="lightbox" id="lightbox" onclick="closeLightbox()">
+        <img src="" alt="放大预览" id="lightboxImg">
+    </div>
+
+    <!-- Installation -->
+    <section class="section" id="install">
+        <div class="wrapper">
+            <div class="section-label reveal">快速开始</div>
+            <h2 class="section-title reveal">安装与运行</h2>
+            <p class="section-desc reveal">
+                仅需 Node.js 环境，三步即可启动本地检索服务。
+            </p>
+
+            <div class="reveal" style="margin-bottom: 32px;">
+                <h3 style="font-size: 1.1rem; margin-bottom: 12px; font-weight: 700;">
+                    📋 环境要求
+                </h3>
+                <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                    <span style="background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 8px 16px; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 6px;">
+                        <span style="color: var(--green);">⬢</span> Node.js
+                    </span>
+                    <span style="background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 8px 16px; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 6px;">
+                        <span style="color: var(--cyan);">🪟</span> Windows / macOS / Linux
+                    </span>
+                </div>
+            </div>
+
+            <div class="reveal" style="margin-bottom: 24px;">
+                <h3 style="font-size: 1.1rem; margin-bottom: 12px; font-weight: 700;">
+                    🚀 方式一：一键启动（Windows）
+                </h3>
+                <div class="code-block">
+                    <div class="code-block-header">
+                        <span class="code-dot code-dot--red"></span>
+                        <span class="code-dot code-dot--yellow"></span>
+                        <span class="code-dot code-dot--green"></span>
+                        <span class="code-block-title">terminal</span>
+                    </div>
+                    <pre><code>双击运行 <span class="hl-func">启动服务器.bat</span></code></pre>
+                </div>
+                <p style="margin-top: 8px; font-size: 0.8rem; color: var(--text-muted);">浏览器会自动打开 http://localhost:8888</p>
+            </div>
+
+            <div class="reveal">
+                <h3 style="font-size: 1.1rem; margin-bottom: 12px; font-weight: 700;">
+                    💻 方式二：手动启动
+                </h3>
+                <div class="code-block">
+                    <div class="code-block-header">
+                        <span class="code-dot code-dot--red"></span>
+                        <span class="code-dot code-dot--yellow"></span>
+                        <span class="code-dot code-dot--green"></span>
+                        <span class="code-block-title">terminal</span>
+                    </div>
+                    <button class="code-copy" onclick="copyCode(this)">复制</button>
+                    <pre><code><span class="hl-comment"># 终端 1 — 启动代理服务</span>
+<span class="hl-keyword">node</span> proxy-server.js
+
+<span class="hl-comment"># 终端 2 — 启动前端服务</span>
+<span class="hl-keyword">node</span> simple-server.js
+
+<span class="hl-comment"># 浏览器访问</span>
+<span class="hl-keyword">open</span> http://localhost:8888</code></pre>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Status -->
+    <section class="section" id="status">
+        <div class="wrapper">
+            <div class="section-label reveal">结果解读</div>
+            <h2 class="section-title reveal">检索结果状态说明</h2>
+            <p class="section-desc reveal">
+                每次检索会返回四种状态之一，帮助您快速判断用户名在各平台的存在情况。
+            </p>
+            <div class="status-grid">
+                <div class="status-card reveal">
+                    <div class="status-icon">✓</div>
+                    <div class="status-name" style="color: var(--green);">已注册</div>
+                    <div class="status-desc">该用户名在此平台已存在</div>
+                </div>
+                <div class="status-card reveal">
+                    <div class="status-icon">✗</div>
+                    <div class="status-name" style="color: var(--red);">不存在</div>
+                    <div class="status-desc">该用户名在此平台未注册</div>
+                </div>
+                <div class="status-card reveal">
+                    <div class="status-icon">❓</div>
+                    <div class="status-name" style="color: var(--amber);">需手工验证</div>
+                    <div class="status-desc">需要人工进一步确认结果</div>
+                </div>
+                <div class="status-card reveal">
+                    <div class="status-icon">⚠</div>
+                    <div class="status-name" style="color: var(--text-muted);">错误信息</div>
+                    <div class="status-desc">请求失败或出现网络异常</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="cta-section">
+        <div class="wrapper">
+            <h2 class="reveal">准备好开始了吗？</h2>
+            <p class="reveal">克隆仓库，安装依赖，即刻体验跨平台用户名检索。</p>
+            <div class="reveal" style="display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
+                <a href="https://github.com/qwerasdzx-123/username_searcher" class="btn btn-primary" target="_blank">
+                    ⭐ Star on GitHub
+                </a>
+                <a href="https://github.com/qwerasdzx-123/username_searcher/fork" class="btn btn-secondary" target="_blank">
+                    🍴 Fork 仓库
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="wrapper">
+            <p>
+                Made with ❤️ · 
+                <a href="https://github.com/qwerasdzx-123/username_searcher" target="_blank">GitHub</a> · 
+                MIT License
+            </p>
+        </div>
+    </footer>
+
+    <script>
+        // --- Lightbox ---
+        function openLightbox(src) {
+            const lb = document.getElementById('lightbox');
+            const img = document.getElementById('lightboxImg');
+            img.src = src;
+            lb.classList.add('active');
+            document.body.style.overflow = 'hidden';
+        }
+        function closeLightbox() {
+            const lb = document.getElementById('lightbox');
+            lb.classList.remove('active');
+            document.body.style.overflow = '';
+        }
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeLightbox();
+        });
+
+        // --- Code Copy ---
+        function copyCode(btn) {
+            const pre = btn.parentElement.querySelector('pre code');
+            const text = pre.innerText;
+            navigator.clipboard.writeText(text).then(() => {
+                const orig = btn.textContent;
+                btn.textContent = '已复制!';
+                btn.style.color = '#10b981';
+                setTimeout(() => {
+                    btn.textContent = orig;
+                    btn.style.color = '';
+                }, 1500);
+            });
+        }
+
+        // --- Navbar Scroll ---
+        const navbar = document.getElementById('navbar');
+        window.addEventListener('scroll', () => {
+            navbar.classList.toggle('scrolled', window.scrollY > 20);
+        });
+
+        // --- Scroll Reveal ---
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                }
+            });
+        }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+
+        document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+        // --- Parallax Glow ---
+        const glow = document.getElementById('glowFollow');
+        let mouseX = -500, mouseY = -500;
+        let currentX = -500, currentY = -500;
+
+        document.addEventListener('mousemove', (e) => {
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+        });
+
+        function animateGlow() {
+            currentX += (mouseX - currentX) * 0.08;
+            currentY += (mouseY - currentY) * 0.08;
+            glow.style.left = currentX + 'px';
+            glow.style.top = currentY + 'px';
+            requestAnimationFrame(animateGlow);
+        }
+        animateGlow();
+
+        // --- Smooth scroll for nav links ---
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function(e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            });
+        });
+    </script>
+</body>
+</html>

@@ -2,6 +2,8 @@
 
 快速检测用户名在多个社交平台上的注册情况。
 
+> 🎨 [查看炫酷展示页](https://qwerasdzx-123.github.io/username_searcher/showcase.html) | ⭐ [GitHub 仓库](https://github.com/qwerasdzx-123/username_searcher)
+
 ## 功能特性
 
 - **多平台检索**：同时检测用户名在多个社交网站的注册状态
