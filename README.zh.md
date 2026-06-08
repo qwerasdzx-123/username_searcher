@@ -4,7 +4,7 @@
 
 **跨平台用户名检索工具 — 一键检测用户名在 999+ 个社交平台上的注册情况。**
 
-[🌐 功能展示](https://qwerasdzx-123.github.io/username_searcher/showcase.html) | [⭐ GitHub](https://github.com/qwerasdzx-123/username_searcher)
+[![功能展示](https://img.shields.io/badge/功能展示-showcase-6366f1?style=flat-square&logo=github)](https://qwerasdzx-123.github.io/username_searcher/showcase.html) [![Issues](https://img.shields.io/badge/Issues-反馈问题-ef4444?style=flat-square&logo=github)](https://github.com/qwerasdzx-123/username_searcher/issues)
 
 [![Twitter](https://img.shields.io/badge/Twitter-@kalaspace002-1DA1F2?style=flat-square&logo=twitter&logoColor=white)](https://x.com/kalaspace002) [![Threads](https://img.shields.io/badge/Threads-@kalaspace002-000000?style=flat-square&logo=threads&logoColor=white)](https://www.threads.com/@kalaspace002)
 

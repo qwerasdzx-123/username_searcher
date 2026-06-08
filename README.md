@@ -4,7 +4,7 @@
 
 **Cross-platform username lookup tool — detect registrations across 999+ social platforms in seconds.**
 
-[🌐 功能展示](https://qwerasdzx-123.github.io/username_searcher/showcase.html) | [⭐ GitHub](https://github.com/qwerasdzx-123/username_searcher)
+[![Showcase](https://img.shields.io/badge/Showcase-demo-6366f1?style=flat-square&logo=github)](https://qwerasdzx-123.github.io/username_searcher/showcase.html) [![Issues](https://img.shields.io/badge/Issues-report-ef4444?style=flat-square&logo=github)](https://github.com/qwerasdzx-123/username_searcher/issues)
 
 [![Twitter](https://img.shields.io/badge/Twitter-@kalaspace002-1DA1F2?style=flat-square&logo=twitter&logoColor=white)](https://x.com/kalaspace002) [![Threads](https://img.shields.io/badge/Threads-@kalaspace002-000000?style=flat-square&logo=threads&logoColor=white)](https://www.threads.com/@kalaspace002)
 
