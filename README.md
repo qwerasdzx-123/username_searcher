@@ -6,6 +6,8 @@
 
 [🌐 功能展示](https://qwerasdzx-123.github.io/username_searcher/showcase.html) | [⭐ GitHub](https://github.com/qwerasdzx-123/username_searcher)
 
+[![Twitter](https://img.shields.io/badge/Twitter-@kalaspace002-1DA1F2?style=flat-square&logo=twitter&logoColor=white)](https://x.com/kalaspace002) [![Threads](https://img.shields.io/badge/Threads-@kalaspace002-000000?style=flat-square&logo=threads&logoColor=white)](https://www.threads.com/@kalaspace002)
+
 <a href="./README.zh.md">中文</a> / <a href="./README.md">English</a>
 
 </div>
