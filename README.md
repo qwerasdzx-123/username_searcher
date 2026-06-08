@@ -1,51 +1,61 @@
-# 用户名检索工具
+<div align="center">
 
-快速检测用户名在多个社交平台上的注册情况。
+# 🔍 Username Searcher
 
-> 🎨 [功能展示](https://qwerasdzx-123.github.io/username_searcher/showcase.html) | ⭐ [GitHub 仓库](https://github.com/qwerasdzx-123/username_searcher)
+**Cross-platform username lookup tool — detect registrations across 999+ social platforms in seconds.**
 
-## 功能特性
+[🌐 功能展示](https://qwerasdzx-123.github.io/username_searcher/showcase.html) | [⭐ GitHub](https://github.com/qwerasdzx-123/username_searcher)
 
-- **多平台检索**：同时检测用户名在多个社交网站的注册状态
-- **精准/模糊匹配**：支持精准匹配和模糊匹配两种查询模式
-- **代理模式切换**：支持本地代理和直连两种网络请求方式
-- **可调并发数**：1-20 可调，平衡速度与稳定性
-- **结果筛选**：按已注册、不存在、需手工验证、错误信息分类查看
-- **热门网站过滤**：可仅显示热门网站，减少无关结果
-- **测试模式**：可仅测试前几个网站，快速验证功能
-- **日志记录**：自动将运行日志保存到本地文件
+<a href="./README.zh.md">中文</a> / <a href="./README.md">English</a>
 
-## 环境要求
+</div>
 
-- [Node.js](https://nodejs.org/) 运行环境
+---
 
-## 快速开始
+## ✨ Features
 
-1. 双击运行 `启动服务器.bat`
-2. 浏览器会自动打开 `http://localhost:8888`
-3. 在搜索框输入用户名，点击"开始搜索"
-4. 等待结果返回，可通过下拉菜单筛选结果
+- **999+ Platforms** — Covers popular, normal, and niche social sites worldwide
+- **Precision & Fuzzy Matching** — Dual query modes for exact and variant username detection
+- **Dual Proxy Modes** — Local proxy and direct connection to adapt to different network environments
+- **Adjustable Concurrency** — 1–20 concurrent requests, balancing speed and stability
+- **Smart Filtering** — Filter results by: Registered, Not Found, Manual Verify, Error
+- **Popular Sites Only** — Option to limit search to trending platforms
+- **Test Mode** — Quick validation by testing only the first few sites
+- **Local Logging** — Auto-saves run logs to local files by date
 
-## 手动启动
+## 📋 Requirements
+
+- [Node.js](https://nodejs.org/) runtime
+
+## 🚀 Quick Start
+
+1. Double-click `启动服务器.bat` (Windows)
+2. Browser opens automatically at `http://localhost:8888`
+3. Enter a username and click "Start Search"
+4. Filter results via the dropdown menu
+
+## 💻 Manual Start
 
 ```bash
 node proxy-server.js
 node simple-server.js
 ```
 
-然后访问 `http://localhost:8888`
+Then visit `http://localhost:8888`
 
+## 📊 Result Status
 
-## 结果状态说明
+| Status | Description |
+|--------|-------------|
+| Registered | Username exists on this platform |
+| Not Found | Username is not registered |
+| Manual Verify | Requires human confirmation |
+| Error | Request failed or network error |
 
-| 状态 | 含义 |
-|------|------|
-| 已注册 | 该用户名在此平台已存在 |
-| 不存在 | 该用户名在此平台未注册 |
-| 需手工验证 | 需要人工进一步确认 |
-| 错误信息 | 请求失败或出现异常 |
+## 🛑 Shutdown
 
+Press `Y` in the launcher window to clean up processes and port bindings before exit.
 
-## 关闭程序
+## 📄 License
 
-在启动窗口按 `Y` 键即可自动清理进程和端口占用后退出。
+MIT License
