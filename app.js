@@ -1,5 +1,17 @@
-// 用户名检索工具 - 主程序（优化版：精准存在性验证 + 日志 + 智能代理 + 查询模式）
+// 用户名检索工具 - 主程序（SOLID重构版：精准存在性验证 + 日志 + 智能代理 + 查询模式）
 'use strict';
+
+// ============================================================
+// 共享常量引用（来自 shared-constants.js，先于本文件加载）
+//   METHOD, SPA_SHELL_PATTERNS, ANTI_BOT_KEYWORDS, ERROR_TITLE_KEYWORDS,
+//   createManualVerifyResult, isSpaShell, isAntiBotPage, isErrorPage, isLoginRequired
+// ============================================================
+// 为保持向后兼容，创建本地别名（shared-constants.js 中函数名前无下划线）
+const _createManualVerifyResult = createManualVerifyResult;
+const _isSpaShell = isSpaShell;
+const _isAntiBotPage = isAntiBotPage;
+const _isErrorPage = isErrorPage;
+const _isLoginRequired = isLoginRequired;
 
 // ============================================================
 // 零、日志系统
@@ -7,10 +19,10 @@
 class Logger {
     constructor() {
         this.logs = [];
-        this.maxLogs = 5000;  // 最多保留条数
+        this.MAX_LOGS = 5000;
         this.listeners = [];
         this._logQueue = [];
-        this._flushing = false;
+        this._isFlushing = false;
         this._flushInterval = setInterval(() => this._flushToFile(), 3000);
     }
 
@@ -20,15 +32,15 @@ class Logger {
     }
 
     _flushToFile() {
-        if (this._logQueue.length === 0 || this._flushing) return;
-        this._flushing = true;
+        if (this._logQueue.length === 0 || this._isFlushing) return;
+        this._isFlushing = true;
         const batch = this._logQueue.splice(0);
         const text = batch.join('\n') + '\n';
         fetch('http://localhost:8888/api/log', {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain; charset=utf-8' },
             body: text
-        }).catch(() => {}).finally(() => { this._flushing = false; });
+        }).catch(() => {}).finally(() => { this._isFlushing = false; });
     }
 
     _add(level, message, data = null) {
@@ -41,15 +53,12 @@ class Logger {
         };
         this.logs.push(entry);
 
-        // 限制日志数量
-        if (this.logs.length > this.maxLogs) {
-            this.logs = this.logs.slice(-this.maxLogs);
+        if (this.logs.length > this.MAX_LOGS) {
+            this.logs = this.logs.slice(-this.MAX_LOGS);
         }
 
-        // 通知监听器
-        this.listeners.forEach(fn => fn(entry));
+        this.listeners.forEach(callback => callback(entry));
 
-        // 写入日志文件（批量写入，减少IO）
         let line = `[${entry.time}] [${level.toUpperCase()}] ${message}`;
         if (data) line += ` | ${JSON.stringify(data)}`;
         this._logQueue.push(line);
@@ -74,10 +83,10 @@ class Logger {
         this.info('日志已清空');
     }
 
-    onNewLog(fn) {
-        this.listeners.push(fn);
+    onNewLog(callback) {
+        this.listeners.push(callback);
         return () => {
-            this.listeners = this.listeners.filter(l => l !== fn);
+            this.listeners = this.listeners.filter(l => l !== callback);
         };
     }
 
@@ -279,10 +288,60 @@ const VERIFICATION_RULES = {
     },
     'tiktok.com': {
         httpStatus: { directNotFound: [404], directError: [403, 429] },
+        // TikTok "account not found" 页面是中文 SPA，返回 HTTP 200，内容包含：
+        // - "找不到此账号" / "找不到此音乐" 等错误信息
+        // - 同时也有 followers/following/videos 等导航词（在推荐区域）
+        // - 同时 URL 中也包含用户名（推荐账号卡片）
+        // 解决策略：精确的中文"不存在"关键词优先，foundKeywords 不使用泛化词
         notFoundKeywords: [
-            'couldn\'t find this account', 'page not found', 'user not found', 'account not found'
+            // 中文错误信息
+            '找不到此账号', '账号不存在', '用户不存在', '无法找到该账号',
+            'couldn\'t find this account', 'couldn\'t find', 'account not found',
+            'user not found', 'profile not found'
         ],
-        foundKeywords: ['followers', 'following', 'likes', 'videos', 'fans'],
+        // 移除 foundKeywords：followers/videos/likes 在 TikTok 的 404 页面也大量存在（推荐账号区域）
+        // 不依赖 foundKeywords，只靠 notFoundKeywords 和 HTTP 状态码判定
+        foundKeywords: [],
+        minContentLength: 2000,
+        notFoundContentLength: 400,
+        scoreThreshold: 2
+    },
+    'instagram.com': {
+        httpStatus: { directNotFound: [404], directError: [403, 429] },
+        // Instagram 不存在账号时返回 HTTP 200，SPA 内容：
+        // - Title 只显示 "Instagram"（存在时是 "@qy145222 • Instagram"）
+        // - notFoundKeywords 中的中文/英文错误信息由 JS 渲染，服务器 HTML 中可能不存在
+        // 核心检测：检查 <title> 是否包含 @username 格式
+        notFoundKeywords: [
+            // 中文错误信息（如果服务器 HTML 包含）
+            '无法访问此页面', '你点击的链接可能已损坏', '页面已被移除',
+            '很抱歉，无法访问', '该内容无法在你的所在地区查看',
+            // 英文错误信息
+            'sorry, this page isn\'t available', 'link you followed may have expired',
+            'page isn\'t available', 'account not found', 'user not found',
+            'this page is unavailable', 'no longer available'
+        ],
+        foundKeywords: [],
+        // Instagram SPA 检测：Title 不包含 @username 时判定为不存在
+        titleContainsUsername: true,
+        minContentLength: 2000,
+        notFoundContentLength: 400,
+        scoreThreshold: 2
+    },
+    'pinterest.com': {
+        httpStatus: { directNotFound: [404], directError: [403, 429] },
+        // Pinterest 不存在账号时返回 HTTP 200，SPA 页面：
+        // - 服务器 HTML 中 Title 通常为空或 "Pinterest"
+        // - URL 参数 show_error=true 表示出错（由 JS 渲染）
+        // - 页面可能包含泛化词和用户名（来自 URL 区域）
+        // 核心检测：Title 不包含用户名时判定为不存在
+        notFoundKeywords: [
+            'profile not found', 'user not found', 'doesn\'t exist', 'does not exist',
+            'board not found', 'no longer available'
+        ],
+        foundKeywords: [],
+        // Pinterest SPA 检测：Title 不包含 @username 或 "Pinterest" + username 时判定为不存在
+        titleContainsUsername: true,
         minContentLength: 2000,
         notFoundContentLength: 400,
         scoreThreshold: 2
@@ -942,6 +1001,8 @@ class UsernameChecker {
         this.isSearching = false;
         this.abortController = null;
         this.proxyManager = new ProxyManager();
+        this.currentUsername = null;  // 当前搜索的用户名，用于检测判断
+        this.currentFilter = 'all';  // 当前筛选状态
 
         this.config = {
             batchSize: 3,
@@ -955,9 +1016,9 @@ class UsernameChecker {
         // 从 localStorage 恢复用户设定的并发数，默认 3
         const savedConcurrency = localStorage.getItem('usernameChecker_concurrency');
         if (savedConcurrency) {
-            const val = parseInt(savedConcurrency, 10);
-            if (val >= 1 && val <= 20) {
-                this.config.batchSize = val;
+            const concurrency = parseInt(savedConcurrency, 10);
+            if (concurrency >= 1 && concurrency <= 20) {
+                this.config.batchSize = concurrency;
             }
         }
 
@@ -990,13 +1051,23 @@ class UsernameChecker {
     bindEvents() {
         const searchBtn = document.getElementById('searchBtn');
         const usernameInput = document.getElementById('usernameInput');
-        const filterSelect = document.getElementById('filterSelect');
 
         searchBtn.addEventListener('click', () => this.handleSearch());
         usernameInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') this.handleSearch();
         });
-        filterSelect.addEventListener('change', () => this.filterResults());
+
+        // stat-card 按钮点击筛选
+        document.querySelectorAll('.stat-card[data-filter]').forEach(card => {
+            card.addEventListener('click', () => {
+                // 切换 active 状态
+                document.querySelectorAll('.stat-card[data-filter]').forEach(c => c.classList.remove('active'));
+                card.classList.add('active');
+                // 执行筛选
+                this.currentFilter = card.dataset.filter;
+                this.filterResults();
+            });
+        });
 
         // 查询模式切换
         document.querySelectorAll('input[name="searchMode"]').forEach(radio => {
@@ -1018,13 +1089,13 @@ class UsernameChecker {
         if (concurrencyInput) {
             concurrencyInput.value = this.config.batchSize;
             concurrencyInput.addEventListener('change', () => {
-                let val = parseInt(concurrencyInput.value, 10);
-                if (isNaN(val) || val < 1) val = 1;
-                if (val > 20) val = 20;
-                concurrencyInput.value = val;
-                this.config.batchSize = val;
-                localStorage.setItem('usernameChecker_concurrency', val);
-                logger.info(`并发数已设置为: ${val}`);
+                let concurrency = parseInt(concurrencyInput.value, 10);
+                if (isNaN(concurrency) || concurrency < 1) concurrency = 1;
+                if (concurrency > 20) concurrency = 20;
+                concurrencyInput.value = concurrency;
+                this.config.batchSize = concurrency;
+                localStorage.setItem('usernameChecker_concurrency', concurrency);
+                logger.info(`并发数已设置为: ${concurrency}`);
             });
         }
 
@@ -1109,7 +1180,7 @@ class UsernameChecker {
         const resultsList = document.getElementById('resultsList');
         resultsList.innerHTML = '';
 
-        let checked = 0, found = 0, notFound = 0, errors = 0;
+        let checkedCount = 0, foundCount = 0, notFoundCount = 0, errorCount = 0, manualVerifyCount = 0;
 
         for (let i = 0; i < sites.length; i += this.config.batchSize) {
             if (!this.isSearching) break;
@@ -1124,14 +1195,18 @@ class UsernameChecker {
                     this.results.push(result);
                     this.addResultToDOM(result);
 
-                    if (result.status === 'found') found++;
-                    else if (result.status === 'not-found') notFound++;
-                    else errors++;
-                    checked++;
+                    if (result.status === 'found') foundCount++;
+                    else if (result.status === 'not-found') {
+                        notFoundCount++;
+                        // 统计需手工验证的数量
+                        if (result.message === '需手工验证') manualVerifyCount++;
+                    }
+                    else errorCount++;
+                    checkedCount++;
                 }
 
-                this.updateProgress(checked, sites.length);
-                this.updateStats(found, notFound, checked, errors);
+                this.updateProgress(checkedCount, sites.length);
+                this.updateStats(foundCount, notFoundCount, checkedCount, errorCount, manualVerifyCount);
 
             } catch (error) {
                 logger.error(`批次错误: ${error.message}`);
@@ -1144,10 +1219,10 @@ class UsernameChecker {
                     };
                     this.results.push(errorResult);
                     this.addResultToDOM(errorResult);
-                    errors++; checked++;
+                    errorCount++; checkedCount++;
                 }
-                this.updateProgress(checked, sites.length);
-                this.updateStats(found, notFound, checked, errors);
+                this.updateProgress(checkedCount, sites.length);
+                this.updateStats(foundCount, notFoundCount, checkedCount, errorCount, manualVerifyCount);
             }
 
             await this.delay(this.config.delayBetweenBatches);
@@ -1157,9 +1232,13 @@ class UsernameChecker {
         this.updateSearchButton(false);
         document.getElementById('progressText').textContent = '搜索完成';
 
-        logger.info(`搜索完成 - 总计: ${checked}, 已注册: ${found}, 未注册: ${notFound}, 失败: ${errors}`);
+        logger.info(`搜索完成 - 总计: ${checkedCount}, 已注册: ${foundCount}, 未注册: ${notFoundCount}, 需验证: ${manualVerifyCount}, 失败: ${errorCount}`);
 
-        const debugInfo = `配置信息:
+        this.updateDebugInfo(this._buildDebugInfo(checkedCount, foundCount, notFoundCount, errorCount, manualVerifyCount));
+    }
+
+    _buildDebugInfo(checkedCount, foundCount, notFoundCount, errorCount, manualVerifyCount) {
+        return `配置信息:
 - 批次大小: ${this.config.batchSize}
 - 请求超时: ${this.config.requestTimeout}ms
 - 查询模式: ${this.config.searchMode === 'precise' ? '精准匹配' : '模糊匹配'}
@@ -1167,13 +1246,12 @@ class UsernameChecker {
 - 验证规则已配置: ${Object.keys(VERIFICATION_RULES).length} 个网站
 
 统计信息:
-- 总计检测: ${checked}
-- 已注册: ${found}
-- 未注册: ${notFound}
-- 失败: ${errors}
-- 成功率: ${checked > 0 ? ((checked - errors) / checked * 100).toFixed(1) : 0}%`;
-
-        this.updateDebugInfo(debugInfo);
+- 总计检测: ${checkedCount}
+- 已注册: ${foundCount}
+- 未注册: ${notFoundCount}
+- 需验证: ${manualVerifyCount}
+- 失败: ${errorCount}
+- 成功率: ${checkedCount > 0 ? ((checkedCount - errorCount) / checkedCount * 100).toFixed(1) : 0}%`;
     }
 
     async checkSite(site, username) {
@@ -1216,6 +1294,7 @@ class UsernameChecker {
     // 五、核心验证方法（含智能代理）
     // ============================================================
     async verifySite(site, username) {
+        this.currentUsername = username;  // 记录当前用户名，供分析函数使用
         const url = site.url.replace('{username}', username);
 
         if (!url || url.includes('undefined') || url.includes('NaN')) {
@@ -1249,45 +1328,27 @@ class UsernameChecker {
      */
     async _directFetch(site, url) {
         try {
+            const timeoutSignal = AbortSignal.timeout(this.config.requestTimeout);
+            const combinedSignal = this.abortController
+                ? AbortSignal.any([this.abortController.signal, timeoutSignal])
+                : timeoutSignal;
+
             const response = await fetch(url, {
-                signal: this.abortController.signal,
+                signal: combinedSignal,
                 mode: 'cors',
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                    'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
-                },
-                signal: AbortSignal.timeout(this.config.requestTimeout)
+                headers: { ...DEFAULT_REQUEST_HEADERS }
             });
 
             const httpStatus = response.status;
             const httpResult = this.evaluateHttpStatus(site.domain, httpStatus);
             if (httpResult.definitive) {
-                return {
-                    found: httpResult.found,
-                    message: httpResult.message,
-                    confidence: httpResult.confidence,
-                    details: {
-                        httpStatus, contentLength: 0,
-                        notFoundMatches: [], foundMatches: [],
-                        method: 'http-status-direct', proxy: 'direct'
-                    }
-                };
+                return this._buildHttpStatusResult(httpResult, httpStatus, 'direct');
             }
 
-            // 处理 3xx 重定向
+            // 3xx 重定向 → 需手工验证
             if (httpStatus >= 300 && httpStatus < 400) {
                 logger.info(`[直连重定向] ${site.domain} HTTP ${httpStatus}`);
-                return {
-                    found: false,
-                    message: '需手工验证',
-                    confidence: 0,
-                    details: {
-                        httpStatus, contentLength: 0,
-                        notFoundMatches: ['[需手工验证-重定向]'], foundMatches: [],
-                        method: 'manual-verify', proxy: 'direct'
-                    }
-                };
+                return _createManualVerifyResult('重定向', 'direct', { httpStatus });
             }
 
             if (!response.ok && httpStatus !== 404) {
@@ -1298,188 +1359,119 @@ class UsernameChecker {
             const contentLength = text.length;
 
             if (contentLength < 200) {
-                return {
-                    found: false,
-                    message: '需手工验证',
-                    confidence: 0,
-                    details: {
-                        httpStatus, contentLength,
-                        notFoundMatches: ['[需手工验证-内容过短]'], foundMatches: [],
-                        method: 'manual-verify', proxy: 'direct'
-                    }
-                };
+                return _createManualVerifyResult('内容过短', 'direct', { httpStatus, contentLength });
             }
 
-            const analysisResult = this.analyzeSiteResponse(site, text, text.toLowerCase(), contentLength, httpStatus);
-            analysisResult.details.httpStatus = httpStatus;
-            analysisResult.details.contentLength = contentLength;
-            analysisResult.details.proxy = 'direct';
-            return analysisResult;
+            return this._finalizeAnalysisResult(
+                this.analyzeSiteResponse(site, text, text.toLowerCase(), contentLength, httpStatus),
+                httpStatus, contentLength, 'direct'
+            );
 
         } catch (error) {
-            const errMsg = error.message || '';
-            if (error.name === 'AbortError' || error.name === 'TimeoutError' || errMsg.includes('timed out')) {
-                logger.error(`[直连超时] ${site.domain} - 直连请求超时，该网站可能需要代理`);
-                throw new Error('直连请求超时 - 该网站可能需要代理访问，请切换到"本地代理"模式');
-            }
-            logger.error(`[直连错误] ${site.domain} - ${errMsg}`);
-            throw error;
+            return this._handleFetchError(error, site, 'direct');
         }
     }
 
+    _buildHttpStatusResult(httpResult, httpStatus, proxy) {
+        return {
+            found: httpResult.found, message: httpResult.message, confidence: httpResult.confidence,
+            details: { httpStatus, contentLength: 0, notFoundMatches: [], foundMatches: [],
+                       method: proxy === 'direct' ? METHOD.HTTP_STATUS_DIRECT : METHOD.HTTP_STATUS, proxy }
+        };
+    }
+
+    _finalizeAnalysisResult(analysisResult, httpStatus, contentLength, proxy) {
+        analysisResult.details.httpStatus = httpStatus;
+        analysisResult.details.contentLength = contentLength;
+        analysisResult.details.proxy = proxy;
+        return analysisResult;
+    }
+
+    _handleFetchError(error, site, proxy) {
+        const errMsg = error.message || '';
+        if (error.name === 'AbortError' || error.name === 'TimeoutError' || errMsg.includes('timed out')) {
+            logger.error(`[${proxy === 'direct' ? '直连超时' : '代理超时'}] ${site.domain} - 请求超时`);
+            throw new Error(proxy === 'direct'
+                ? '直连请求超时 - 该网站可能需要代理访问，请切换到"本地代理"模式'
+                : '代理请求超时');
+        }
+        logger.error(`[${proxy}错误] ${site.domain} - ${errMsg}`);
+        throw error;
+    }
+
     /**
-     * 本地代理模式（通过 proxy-server.js 后端转发到 192.168.1.29:7897）
+     * 本地代理模式（通过 proxy-server.js 后端转发）
      */
     async _localProxyFetch(site, url) {
         const proxyUrl = this.proxyManager.localProxyUrl;
-
         logger.debug(`[本地代理] ${site.domain} via ${proxyUrl}`);
+
+        const timeoutSignal = AbortSignal.timeout(this.config.requestTimeout);
+        const combinedSignal = this.abortController
+            ? AbortSignal.any([this.abortController.signal, timeoutSignal])
+            : timeoutSignal;
 
         const response = await fetch(proxyUrl, {
             method: 'POST',
-            signal: this.abortController.signal,
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                url: url,
-                timeout: this.config.requestTimeout
-            }),
-            signal: AbortSignal.timeout(this.config.requestTimeout)
+            signal: combinedSignal,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url, timeout: this.config.requestTimeout })
         });
 
-        if (!response.ok) {
-            throw new Error(`本地代理返回 HTTP ${response.status}`);
-        }
-
+        if (!response.ok) throw new Error(`本地代理返回 HTTP ${response.status}`);
         const result = await response.json();
-
-        if (result.error) {
-            throw new Error(`本地代理错误: ${result.error}`);
-        }
+        if (result.error) throw new Error(`本地代理错误: ${result.error}`);
 
         const httpStatus = result.status;
         const text = result.body;
         const contentLength = text.length;
         const lowerText = text.toLowerCase();
 
-        // HTTP 状态码预判
+        // 1. HTTP 状态码预判
         const httpResult = this.evaluateHttpStatus(site.domain, httpStatus, contentLength);
         if (httpResult.definitive) {
-            return {
-                found: httpResult.found,
-                message: httpResult.message,
-                confidence: httpResult.confidence,
-                details: {
-                    httpStatus, contentLength,
-                    notFoundMatches: [], foundMatches: [],
-                    method: 'http-status', proxy: 'local-proxy'
-                }
-            };
+            return this._buildHttpStatusResult(httpResult, httpStatus, 'local-proxy');
         }
 
-        // 处理 3xx 重定向
+        // 2. 3xx 重定向 → 需手工验证
         if (httpStatus >= 300 && httpStatus < 400) {
-            return {
-                found: false,
-                message: '需手工验证',
-                confidence: 0,
-                details: {
-                    httpStatus, contentLength: 0,
-                    notFoundMatches: ['[需手工验证-重定向]'], foundMatches: [],
-                    method: 'manual-verify', proxy: 'local-proxy'
-                }
-            };
+            return _createManualVerifyResult('重定向', 'local-proxy', { httpStatus });
         }
 
-        // 响应内容为空或过短：标记为需手工验证而非直接报错
+        // 3. 内容过短 → 需手工验证
         if (contentLength < 200) {
-            return {
-                found: false,
-                message: '需手工验证',
-                confidence: 0,
-                details: {
-                    httpStatus, contentLength,
-                    notFoundMatches: ['[需手工验证-内容过短]'], foundMatches: [],
-                    method: 'manual-verify', proxy: 'local-proxy'
-                }
-            };
+            return _createManualVerifyResult('内容过短', 'local-proxy', { httpStatus, contentLength });
         }
 
-        // 特殊处理：HTTP 400 + 登录/错误页特征 → 需手工验证
+        // 4. 特殊状态码的快速路径
+        const quickResult = this._checkSpecialStatus(httpStatus, contentLength, lowerText);
+        if (quickResult) return quickResult;
+
+        return this._finalizeAnalysisResult(
+            this.analyzeSiteResponse(site, text, lowerText, contentLength, httpStatus),
+            httpStatus, contentLength, 'local-proxy'
+        );
+    }
+
+    _checkSpecialStatus(httpStatus, contentLength, lowerText) {
+        // HTTP 400 + 登录/错误页 → 需手工验证
         if (httpStatus === 400 && contentLength < 3000) {
-            const lowerUrl = url.toLowerCase();
-            const needsLogin = (lowerText.includes('login') || lowerText.includes('sign in') ||
-                (lowerText.includes('redirect') && lowerText.includes('login')));
-            const isErrorPage = (lowerText.includes('sorry, something went wrong') ||
-                (lowerText.includes('<title>error</title>') && lowerText.includes('facebook')));
-            if (needsLogin || isErrorPage) {
-                return {
-                    found: false,
-                    message: '需手工验证',
-                    confidence: 0,
-                    details: {
-                        httpStatus, contentLength,
-                        notFoundMatches: ['[需手工验证-需登录]'], foundMatches: [],
-                        method: 'manual-verify', proxy: 'local-proxy'
-                    }
-                };
+            if (_isLoginRequired(lowerText) || _isErrorPage(lowerText)) {
+                return _createManualVerifyResult('需登录', 'local-proxy', { httpStatus, contentLength });
             }
         }
 
-        // 特殊处理：HTTP 200 但内容是短错误页 → 需手工验证
-        if (httpStatus === 200 && contentLength < 3000) {
-            const isErrorPage = (lowerText.includes('sorry, something went wrong') ||
-                                  lowerText.includes('sorry, we couldn\'t find') ||
-                                  lowerText.includes('error occurred') ||
-                                  (lowerText.includes('<title>error</title>') && lowerText.includes('facebook')));
-            if (isErrorPage) {
-                return {
-                    found: false,
-                    message: '需手工验证',
-                    confidence: 0,
-                    details: {
-                        httpStatus, contentLength,
-                        notFoundMatches: ['[需手工验证-错误页]'], foundMatches: [],
-                        method: 'manual-verify', proxy: 'local-proxy'
-                    }
-                };
-            }
+        // HTTP 200 但短错误页 → 需手工验证
+        if (httpStatus === 200 && contentLength < 3000 && _isErrorPage(lowerText)) {
+            return _createManualVerifyResult('错误页', 'local-proxy', { httpStatus, contentLength });
         }
 
-        // 特殊处理：HTTP 403 + 反爬虫/人机验证页面 → 需手工验证
-        if (httpStatus === 403) {
-            const isAntiBotPage = (
-                lowerText.includes('it needs a human touch') ||
-                lowerText.includes('are you a human') ||
-                lowerText.includes('just a moment') ||
-                lowerText.includes('cf-browser-verification') ||
-                lowerText.includes('please verify you are a human') ||
-                lowerText.includes('recaptcha') ||
-                lowerText.includes('g-recaptcha') ||
-                (lowerText.includes('access denied') && contentLength < 5000) ||
-                (lowerText.includes('captcha') && contentLength < 10000)
-            );
-            if (isAntiBotPage) {
-                return {
-                    found: false,
-                    message: '需手工验证',
-                    confidence: 0,
-                    details: {
-                        httpStatus, contentLength,
-                        notFoundMatches: ['[需手工验证-反爬虫]'], foundMatches: [],
-                        method: 'manual-verify', proxy: 'local-proxy'
-                    }
-                };
-            }
+        // HTTP 403 + 反爬虫 → 需手工验证
+        if (httpStatus === 403 && _isAntiBotPage(lowerText, contentLength)) {
+            return _createManualVerifyResult('反爬虫', 'local-proxy', { httpStatus, contentLength });
         }
 
-        const analysisResult = this.analyzeSiteResponse(site, text, lowerText, contentLength, httpStatus);
-        analysisResult.details.httpStatus = httpStatus;
-        analysisResult.details.contentLength = contentLength;
-        analysisResult.details.proxy = 'local-proxy';
-
-        return analysisResult;
+        return null;
     }
 
     /**
@@ -1568,337 +1560,254 @@ class UsernameChecker {
      * 模糊匹配模式：只要页面包含用户名相关信息就倾向于判定为存在
      */
     applyFuzzyMode(result, text, lowerText, contentLength, rules) {
-        // 如果已经判定为存在，不需要调整
-        if (result.found) {
-            result.message = '[模糊] ' + result.message;
-            return result;
+        if (result.found) { result.message = '[模糊] ' + result.message; return result; }
+
+        const fuzzyIndicators = ['profile', 'user', 'account', 'member', 'join', '主页', '用户', '个人', '注册', '登录'];
+        const fuzzyScore = fuzzyIndicators.filter(kw => lowerText.includes(kw)).length;
+
+        const minLen = rules ? rules.minContentLength * 0.6 : 1200;
+        if ((contentLength > minLen && fuzzyScore >= 2) || (contentLength > 800 && fuzzyScore >= 1)) {
+            result.found = false; result.confidence = 0;
+            result.message = '需手工验证'; result.details.method = METHOD.MANUAL_VERIFY;
         }
-
-        // 模糊模式下的宽松判定
-        const fuzzyFoundIndicators = [
-            'profile', 'user', 'account', 'member', 'join',
-            '主页', '用户', '个人', '注册', '登录'
-        ];
-
-        let fuzzyScore = 0;
-        for (const kw of fuzzyFoundIndicators) {
-            if (lowerText.includes(kw)) fuzzyScore++;
-        }
-
-        // 内容长度足够 + 有模糊指标 = 需手工验证
-        if (contentLength > (rules ? rules.minContentLength * 0.6 : 1200) && fuzzyScore >= 2) {
-            result.found = false;
-            result.confidence = 0;
-            result.message = '需手工验证';
-            result.details.method = 'manual-verify';
-        } else if (contentLength > 800 && fuzzyScore >= 1) {
-            result.found = false;
-            result.confidence = 0;
-            result.message = '需手工验证';
-            result.details.method = 'manual-verify';
-        }
-
         return result;
     }
 
     applyConfiguredRules(rules, domain, text, lowerText, contentLength, httpStatus) {
-        const notFoundMatches = [];
-        const foundMatches = [];
-
-        // 规则标记了 requireJsRendering → 需手工验证
+        // 1. JS 渲染标记 → 直接需手工验证
         if (rules.requireJsRendering) {
-            return {
-                found: false,
-                confidence: 0,
-                message: '需手工验证',
-                details: {
-                    method: 'manual-verify',
-                    notFoundMatches: ['[需手工验证-需JS渲染]'],
-                    foundMatches: [],
-                    httpStatus,
-                    contentLength,
-                    proxy: 'local-proxy'
-                }
-            };
+            return _createManualVerifyResult('需JS渲染', 'local-proxy', { httpStatus, contentLength });
         }
 
-        // 反爬虫/JS验证页面检测（优先级最高）
-        const antiBotKeywords = [
-            'just a moment', 'enable javascript', 'please enable javascript',
-            'client challenge', 'checking your browser', 'ddos protection',
-            'please turn javascript on', 'ctrl+f5', 'ctrl+shift+r'
-        ];
-        let isAntiBot = false;
-        for (const abk of antiBotKeywords) {
-            if (lowerText.includes(abk)) {
-                isAntiBot = true;
-                notFoundMatches.push(`[反爬虫] ${abk}`);
-                break;
-            }
-        }
-
-        // SPA 壳子检测：页面只有一个 JS 渲染占位符（<app-root>, <div id="root">, <div id="app"> 等），无实质内容
-        const spaShellPatterns = [
-            /<app-root>\s*<\/app-root>/i,
-            /<div\s+id=["']root["']\s*>\s*<\/div>/i,
-            /<div\s+id=["']app["']\s*>\s*<\/div>/i,
-            /<noscript>[\s\S]*?javascript is required[\s\S]*?<\/noscript>/i,
-        ];
-        let isSpaShell = false;
-        for (const pattern of spaShellPatterns) {
-            if (pattern.test(text)) {
-                isSpaShell = true;
-                break;
-            }
-        }
-
-        // 标题仅为网站名（无用户名），且没有实质内容 → 反爬虫或首页
-        const titleMatch = lowerText.match(/<title>([^<]*)<\/title>/i);
-        if (titleMatch && !isAntiBot) {
-            const title = titleMatch[1].trim();
-            // 如果标题就是纯域名/网站名，且内容中没有用户名相关信息
-            if (contentLength < 8000 && title.length < 20) {
-                // 可能是反爬虫空白页
-            }
-        }
-
-        for (const keyword of rules.notFoundKeywords) {
-            if (lowerText.includes(keyword)) notFoundMatches.push(keyword);
-        }
-        for (const keyword of rules.foundKeywords) {
-            if (lowerText.includes(keyword)) foundMatches.push(keyword);
-        }
-
-        let notFoundScore = notFoundMatches.length;
-        let foundScore = foundMatches.length;
-        const lengthScore = this.calculateLengthScore(contentLength, rules.minContentLength, rules.notFoundContentLength);
-        const threshold = rules.scoreThreshold || 2;
-
-        let found = false, confidence = 50, message = '', method = '';
-
-        // 核心判定逻辑：notFound 匹配优先于 found 匹配
-        // 因为"不存在"页面比"存在"页面更容易误匹配泛词
-        if (notFoundScore > 0 && foundScore === 0) {
-            // 只匹配到未找到特征词 → 不存在
-            found = false;
-            confidence = 70 + notFoundScore * 10;
-            method = 'notFoundKeywords';
-            message = `用户不存在（匹配到 ${notFoundScore} 个未找到特征词）`;
-        } else if (notFoundScore > 0 && foundScore > 0) {
-            // 两边都匹配到了，比较分数
-            // 如果 notFound 分数高或持平 → 倾向判定为不存在
-            if (notFoundScore >= foundScore) {
-                found = false;
-                confidence = 55 + (notFoundScore - foundScore) * 10;
-                method = 'keywordComparison';
-                message = `用户不存在（未找到特征 ${notFoundScore} >= 存在特征 ${foundScore}）`;
-            } else if (foundScore > notFoundScore + threshold) {
-                found = true;
-                confidence = 50 + (foundScore - notFoundScore) * 10;
-                method = 'keywordComparison';
-                message = `用户已注册（存在特征 ${foundScore} > 未找到特征 ${notFoundScore}）`;
-            } else {
-                // found 略高但不显著 → 倾向于不存在
-                found = false;
-                confidence = 45;
-                method = 'keywordComparison';
-                message = `用户可能不存在（特征接近，存在 ${foundScore} vs 未找到 ${notFoundScore}）`;
-            }
-        } else if (foundScore > 0 && notFoundScore === 0) {
-            // 只匹配到存在特征词，且内容长度足够
-            if (lengthScore > 0.5) {
-                found = true;
-                confidence = 55 + foundScore * 8;
-                method = 'foundKeywords';
-                message = `用户已注册（匹配到 ${foundScore} 个存在特征词）`;
-            } else if (lengthScore > 0.2) {
-                found = false;
-                confidence = 0;
-                method = 'manual-verify';
-                message = '需手工验证';
-            } else {
-                found = false;
-                confidence = 50;
-                method = 'foundKeywordsShort';
-                message = `用户可能不存在（匹配到存在特征词但内容极少）`;
-            }
-        } else {
-            // 没有匹配到任何关键词 → 完全依赖内容长度
-            if (lengthScore > 0.7) {
-                found = false;
-                confidence = 0;
-                method = 'manual-verify';
-                message = '需手工验证';
-            } else if (lengthScore > 0.3) {
-                found = false;
-                confidence = 0;
-                method = 'manual-verify';
-                message = '需手工验证';
-            } else {
-                found = false;
-                confidence = 60;
-                method = 'contentLengthOnly';
-                message = '用户不存在（页面内容极少，无明确特征）';
-            }
-        }
-
-        confidence = Math.min(95, Math.max(10, confidence));
-
-        // 反爬虫页面：降级为"需手工验证"
-        if (isAntiBot) {
-            found = false;
-            confidence = 0;
-            method = 'manual-verify';
-            message = '需手工验证';
-        }
-
-        // SPA 壳子页面：需手工验证
-        if (isSpaShell && !found) {
-            found = false;
-            confidence = 0;
-            method = 'manual-verify';
-            message = '需手工验证';
-        } else if (isSpaShell && found && confidence < 80) {
-            found = false;
-            confidence = 0;
-            method = 'manual-verify';
-            message = '需手工验证';
-        }
-
-        // 兜底检查：如果判定为存在，但页面标题包含错误提示，则降级
-        if (found && confidence < 70) {
-            const titleMatch = lowerText.match(/<title>([^<]*)<\/title>/i);
+        // 2. Title 用户名检测（如 Instagram/Pinterest：Title 应包含 @username 或纯用户名）
+        if (rules.titleContainsUsername && this.currentUsername) {
+            const titleMatch = lowerText.match(/<title[^>]*>([^<]*)<\/title>/i);
             if (titleMatch) {
-                const title = titleMatch[1].toLowerCase();
-                const errorTitleKeywords = [
-                    'error', '错误', 'not found', 'doesn\'t exist', 'does not exist',
-                    'page not found', 'user not found', '404', '找不到',
-                    '页面不存在', '用户不存在', 'エラー'
-                ];
-                for (const ek of errorTitleKeywords) {
-                    if (title.includes(ek)) {
-                        found = false;
-                        confidence = 70;
-                        method = 'titleErrorFallback';
-                        message = `用户不存在（页面标题包含错误提示: "${ek}"）`;
-                        break;
-                    }
+                const title = titleMatch[1];
+                const escapedU = this.currentUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                // 支持 @username（Instagram）或纯 username（Pinterest）
+                const usernameInTitle = new RegExp('(@' + escapedU + '|' + escapedU + ')', 'i').test(title);
+                if (!usernameInTitle) {
+                    // Title 不包含用户名，说明账号不存在（即使其他关键词匹配也无效）
+                    return _createManualVerifyResult('Title无用户名', 'local-proxy', {
+                        httpStatus, contentLength, title,
+                        message: `用户可能不存在（Title: "${title}"，未包含用户名 @${this.currentUsername}）`
+                    });
                 }
             }
         }
+
+        // 3. 收集匹配项
+        const { notFoundMatches, foundMatches, isAntiBot, isSpaShell } = this._collectMatches(rules, text, lowerText);
+
+        const notFoundScore = notFoundMatches.length;
+        const foundScore = foundMatches.length;
+        const lengthScore = this.calculateLengthScore(contentLength, rules.minContentLength, rules.notFoundContentLength);
+
+        // 3. 核心判定（传入 text 用于检查用户名是否出现在页面中）
+        let verdict = this._computeVerdict(rules, text, notFoundScore, foundScore, lengthScore);
+
+        // 4. 反爬虫/SPA 降级
+        verdict = this._applyDegradations(verdict, isAntiBot, isSpaShell);
+
+        // 5. 标题错误兜底
+        verdict = this._applyTitleFallback(verdict, lowerText);
 
         return {
-            found, message, confidence: Math.round(confidence),
+            found: verdict.found, message: verdict.message, confidence: Math.round(verdict.confidence),
             details: {
                 notFoundMatches, foundMatches, notFoundScore, foundScore,
                 lengthScore: Math.round(lengthScore * 100),
                 contentLength, minContentLength: rules.minContentLength,
-                method, hasConfiguredRules: true
+                method: verdict.method, hasConfiguredRules: true
             }
         };
     }
 
-    applyUniversalRules(domain, text, lowerText, contentLength, httpStatus) {
+    _collectMatches(rules, text, lowerText) {
         const notFoundMatches = [];
         const foundMatches = [];
 
+        // 反爬虫检测
+        let isAntiBot = false;
+        for (const kw of ANTI_BOT_KEYWORDS) {
+            if (lowerText.includes(kw)) { isAntiBot = true; notFoundMatches.push(`[反爬虫] ${kw}`); break; }
+        }
+
         // SPA 壳子检测
-        const spaShellPatterns = [
-            /<app-root>\s*<\/app-root>/i,
-            /<div\s+id=["']root["']\s*>\s*<\/div>/i,
-            /<div\s+id=["']app["']\s*>\s*<\/div>/i,
-            /<noscript>[\s\S]*?javascript is required[\s\S]*?<\/noscript>/i,
-        ];
-        let isSpaShell = false;
-        for (const pattern of spaShellPatterns) {
-            if (pattern.test(text)) {
-                isSpaShell = true;
-                break;
+        const isSpaShell = _isSpaShell(text);
+
+        // 关键词匹配
+        for (const kw of rules.notFoundKeywords) { if (lowerText.includes(kw)) notFoundMatches.push(kw); }
+        for (const kw of rules.foundKeywords) { if (lowerText.includes(kw)) foundMatches.push(kw); }
+
+        return { notFoundMatches, foundMatches, isAntiBot, isSpaShell };
+    }
+
+    /**
+     * 检查用户名是否出现在页面内容中（作为完整词）
+     */
+    _usernameInText(username, text) {
+        if (!username || !text) return false;
+        const escaped = username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // 用单词边界匹配，确保不会匹配到部分字符串
+        const re = new RegExp('\\b' + escaped + '\\b', 'i');
+        return re.test(text);
+    }
+
+    _computeVerdict(rules, text, notFoundScore, foundScore, lengthScore) {
+        const threshold = rules.scoreThreshold || 2;
+        const username = this.currentUsername;
+        const hasUsername = this._usernameInText(username, text);
+
+        // 只匹配到否定词
+        if (notFoundScore > 0 && foundScore === 0) {
+            return { found: false, confidence: 70 + notFoundScore * 10, method: METHOD.NOT_FOUND_KEYWORDS,
+                     message: `用户不存在（匹配到 ${notFoundScore} 个未找到特征词）` };
+        }
+
+        // 两边都匹配
+        if (notFoundScore > 0 && foundScore > 0) {
+            if (notFoundScore >= foundScore) {
+                return { found: false, confidence: 55 + (notFoundScore - foundScore) * 10, method: METHOD.KEYWORD_COMPARISON,
+                         message: `用户不存在（未找到特征 ${notFoundScore} >= 存在特征 ${foundScore}）` };
+            }
+            // foundScore > notFoundScore + threshold 时，只有用户名出现在页面中才判定为存在
+            if (foundScore > notFoundScore + threshold) {
+                if (hasUsername) {
+                    return { found: true, confidence: 50 + (foundScore - notFoundScore) * 10, method: METHOD.KEYWORD_COMPARISON,
+                             message: `用户已注册（存在特征 ${foundScore} > 未找到特征 ${notFoundScore}，且用户名出现在页面）` };
+                }
+                return { found: false, confidence: 0, method: METHOD.MANUAL_VERIFY,
+                         message: '需手工验证（存在特征词匹配但用户名未在页面中出现）' };
+            }
+            return { found: false, confidence: 45, method: METHOD.KEYWORD_COMPARISON,
+                     message: `用户可能不存在（特征接近，存在 ${foundScore} vs 未找到 ${notFoundScore}）` };
+        }
+
+        // 只匹配到肯定词
+        if (foundScore > 0 && notFoundScore === 0) {
+            // 泛化关键词必须结合用户名实际出现在页面中才能判定为存在
+            if (lengthScore > 0.5 && hasUsername) {
+                return { found: true, confidence: 55 + foundScore * 8, method: METHOD.FOUND_KEYWORDS,
+                         message: `用户已注册（匹配到 ${foundScore} 个存在特征词，且用户名出现在页面）` };
+            }
+            if (lengthScore > 0.2) {
+                return { found: false, confidence: 0, method: METHOD.MANUAL_VERIFY, message: '需手工验证' };
+            }
+            return { found: false, confidence: 50, method: METHOD.FOUND_KEYWORDS_SHORT,
+                     message: '用户可能不存在（匹配到存在特征词但内容极少）' };
+        }
+
+        // 无任何匹配 → 依赖内容长度
+        if (lengthScore > 0.3) {
+            return { found: false, confidence: 0, method: METHOD.MANUAL_VERIFY, message: '需手工验证' };
+        }
+        return { found: false, confidence: 60, method: METHOD.CONTENT_LENGTH_ONLY,
+                 message: '用户不存在（页面内容极少，无明确特征）' };
+    }
+
+    _applyDegradations(verdict, isAntiBot, isSpaShell) {
+        if (isAntiBot) {
+            return { found: false, confidence: 0, method: METHOD.MANUAL_VERIFY, message: '需手工验证' };
+        }
+        if (isSpaShell && (!verdict.found || verdict.confidence < 80)) {
+            return { found: false, confidence: 0, method: METHOD.MANUAL_VERIFY, message: '需手工验证' };
+        }
+        return verdict;
+    }
+
+    _applyTitleFallback(verdict, lowerText) {
+        if (!verdict.found || verdict.confidence >= 70) return verdict;
+        const titleMatch = lowerText.match(/<title>([^<]*)<\/title>/i);
+        if (!titleMatch) return verdict;
+        const title = titleMatch[1].toLowerCase();
+        for (const ek of ERROR_TITLE_KEYWORDS) {
+            if (title.includes(ek)) {
+                return { found: false, confidence: 70, method: METHOD.TITLE_ERROR_FALLBACK,
+                         message: `用户不存在（页面标题包含错误提示: "${ek}"）` };
             }
         }
+        return verdict;
+    }
 
-        if (isSpaShell) {
-            return {
-                found: false, message: '需手工验证', confidence: 0,
-                details: {
-                    notFoundMatches: ['[需手工验证-SPA壳子]'], foundMatches: [], notFoundScore: 1, foundScore: 0,
-                    contentLength, minContentLength: 2000,
-                    method: 'manual-verify', hasConfiguredRules: false
-                }
-            };
+    applyUniversalRules(domain, text, lowerText, contentLength, httpStatus) {
+        // 1. SPA 壳子检测
+        if (_isSpaShell(text)) {
+            return _createManualVerifyResult('SPA壳子', 'local-proxy', {
+                httpStatus: 0, contentLength,
+                notFoundScore: 1, foundScore: 0, minContentLength: 2000,
+                hasConfiguredRules: false
+            });
         }
 
-        for (const keyword of UNIVERSAL_NOT_FOUND_KEYWORDS) {
-            if (lowerText.includes(keyword)) notFoundMatches.push(keyword);
-        }
-        for (const keyword of UNIVERSAL_FOUND_KEYWORDS) {
-            if (lowerText.includes(keyword)) foundMatches.push(keyword);
-        }
-
+        // 2. 收集通用关键词匹配
+        const notFoundMatches = UNIVERSAL_NOT_FOUND_KEYWORDS.filter(kw => lowerText.includes(kw));
+        const foundMatches = UNIVERSAL_FOUND_KEYWORDS.filter(kw => lowerText.includes(kw));
         const notFoundScore = notFoundMatches.length;
         const foundScore = foundMatches.length;
-        const hasValidLength = contentLength > 2000;
-        const hasVeryShortContent = contentLength < 500;
-        const hasMediumContent = contentLength >= 500 && contentLength <= 2000;
 
-        let found = false, confidence = 50, message = '', method = '';
-
-        if (hasVeryShortContent) {
-            // 内容极短 → 几乎肯定是不存在
-            found = false; confidence = 80;
-            message = '用户不存在（页面内容极短）';
-            method = 'veryShortContent';
-        } else if (notFoundScore > 0 && foundScore === 0) {
-            // 只匹配到未找到特征词
-            found = false; confidence = 60 + notFoundScore * 10;
-            message = `用户不存在（匹配到 ${notFoundScore} 个通用未找到特征词）`;
-            method = 'universalNotFoundKeywords';
-        } else if (notFoundScore > 0 && foundScore > 0) {
-            // 两边都匹配到了 → 倾向于不存在（未找到特征词更可靠）
-            if (notFoundScore >= foundScore) {
-                found = false; confidence = 50 + (notFoundScore - foundScore) * 8;
-                message = '用户可能不存在（未找到特征词多于存在特征词）';
-                method = 'universalComparison';
-            } else if (foundScore > notFoundScore + 2 && hasValidLength) {
-                found = false; confidence = 0;
-                message = '需手工验证';
-                method = 'manual-verify';
-            } else {
-                found = false; confidence = 0;
-                message = '需手工验证';
-                method = 'manual-verify';
-            }
-        } else if (foundScore > 0 && notFoundScore === 0 && hasValidLength) {
-            // 只匹配到存在特征词，且内容够长
-            found = true; confidence = 50 + foundScore * 8;
-            message = `用户已注册（匹配到 ${foundScore} 个通用存在特征词）`;
-            method = 'universalFoundKeywords';
-        } else if (hasValidLength) {
-            // 无任何关键词匹配，但内容较长 → 需手工验证
-            found = false; confidence = 0;
-            message = '需手工验证';
-            method = 'lengthOnly';
-        } else if (hasMediumContent) {
-            // 中等长度，无关键词匹配
-            found = false; confidence = 50;
-            message = '用户可能不存在（页面内容不足且无明确特征）';
-            method = 'mediumContent';
-        } else {
-            found = false; confidence = 60;
-            message = '用户不存在（页面内容不足）';
-            method = 'insufficientContent';
-        }
-
-        confidence = Math.min(85, Math.max(15, confidence));
+        // 3. 通用判定（传入 text 用于检查用户名是否出现在页面中）
+        const verdict = this._computeUniversalVerdict(text, contentLength, notFoundScore, foundScore);
 
         return {
-            found, message, confidence: Math.round(confidence),
+            found: verdict.found, message: verdict.message, confidence: Math.round(verdict.confidence),
             details: {
                 notFoundMatches, foundMatches, notFoundScore, foundScore,
                 contentLength, minContentLength: 2000,
-                method, hasConfiguredRules: false
+                method: verdict.method, hasConfiguredRules: false
             }
         };
+    }
+
+    _computeUniversalVerdict(text, contentLength, notFoundScore, foundScore) {
+        const hasVeryShort = contentLength < 500;
+        const hasMedium = contentLength >= 500 && contentLength <= 2000;
+        const hasValid = contentLength > 2000;
+        const username = this.currentUsername;
+        const hasUsername = this._usernameInText(username, text);
+
+        if (hasVeryShort) {
+            return { found: false, confidence: 80, method: METHOD.VERY_SHORT_CONTENT,
+                     message: '用户不存在（页面内容极短）' };
+        }
+        if (notFoundScore > 0 && foundScore === 0) {
+            return { found: false, confidence: 60 + notFoundScore * 10, method: METHOD.UNIVERSAL_NOT_FOUND,
+                     message: `用户不存在（匹配到 ${notFoundScore} 个通用未找到特征词）` };
+        }
+        if (notFoundScore > 0 && foundScore > 0) {
+            if (notFoundScore >= foundScore) {
+                return { found: false, confidence: 50 + (notFoundScore - foundScore) * 8,
+                         method: METHOD.UNIVERSAL_COMPARISON, message: '用户可能不存在（未找到特征词多于存在特征词）' };
+            }
+            if (foundScore > notFoundScore + 2 && hasValid) {
+                // 即使存在特征词更多，也必须用户名实际出现在页面中才判定为存在
+                if (hasUsername) {
+                    return { found: false, confidence: 0, method: METHOD.MANUAL_VERIFY,
+                             message: '需手工验证（存在特征词更多，但用户名未在页面中出现）' };
+                }
+                return { found: false, confidence: 0, method: METHOD.MANUAL_VERIFY, message: '需手工验证' };
+            }
+            return { found: false, confidence: 0, method: METHOD.MANUAL_VERIFY, message: '需手工验证' };
+        }
+        // 只有匹配到存在特征词时，也必须用户名出现在页面中才判定为存在
+        if (foundScore > 0 && notFoundScore === 0 && hasValid) {
+            if (hasUsername) {
+                return { found: true, confidence: 50 + foundScore * 8, method: METHOD.UNIVERSAL_FOUND,
+                         message: `用户已注册（匹配到 ${foundScore} 个通用存在特征词，且用户名出现在页面）` };
+            }
+            return { found: false, confidence: 0, method: METHOD.MANUAL_VERIFY,
+                     message: '需手工验证（存在特征词匹配但用户名未在页面中出现）' };
+        }
+        if (hasValid) {
+            return { found: false, confidence: 0, method: METHOD.LENGTH_ONLY, message: '需手工验证' };
+        }
+        if (hasMedium) {
+            return { found: false, confidence: 50, method: METHOD.MEDIUM_CONTENT,
+                     message: '用户可能不存在（页面内容不足且无明确特征）' };
+        }
+        return { found: false, confidence: 60, method: METHOD.INSUFFICIENT_CONTENT,
+                 message: '用户不存在（页面内容不足）' };
     }
 
     calculateLengthScore(contentLength, minContentLength, notFoundContentLength) {
@@ -1911,103 +1820,97 @@ class UsernameChecker {
     }
 
     // ============================================================
-    // 六、UI 渲染方法
+    // 六、UI 渲染方法（拆分 addResultToDOM 为多个构建子函数）
     // ============================================================
     addResultToDOM(result) {
-        const resultsList = document.getElementById('resultsList');
         const item = document.createElement('div');
         const isManualVerify = result.status === 'not-found' && result.message === '需手工验证';
         item.className = `result-item ${result.status}`;
-        // 需手工验证使用独立状态值，方便筛选
         item.dataset.status = isManualVerify ? 'manual-verify' : result.status;
 
-        const statusIcon = result.status === 'found' ? '✓' :
-                          result.status === 'not-found' ? '✗' : '⚠';
-
-        const typeLabel = result.site.type || '未知类型';
-        const isFound = result.status === 'found';
-        const isDefiniteNotFound = result.status === 'not-found' && !isManualVerify;
-
-        let linkClass, linkText;
-        if (isFound) {
-            // 绿色：确定存在
-            linkClass = 'result-link result-link-found';
-            linkText = '访问主页';
-        } else if (isManualVerify) {
-            // 黄色/橙色：需手工验证
-            linkClass = 'result-link result-link-manual';
-            linkText = '手工验证';
-        } else {
-            // 红色：明确不存在
-            linkClass = 'result-link result-link-notfound';
-            linkText = '手工验证';
-        }
-
-        let confidenceHtml = '';
-        if (result.confidence && result.confidence > 0) {
-            const confidenceClass = result.confidence >= 80 ? 'confidence-high' :
-                                    result.confidence >= 50 ? 'confidence-mid' : 'confidence-low';
-            confidenceHtml = `<span class="confidence-badge ${confidenceClass}">置信度: ${result.confidence}%</span>`;
-        }
-
-        let detailHtml = '';
-        if (result.details && result.details.method) {
-            const methodLabels = {
-                'http-status': 'HTTP状态码', 'http-status-direct': 'HTTP状态码(直连)',
-                'notFoundKeywords': '未找到关键词', 'foundKeywords': '存在关键词',
-                'keywordComparison': '关键词比较', 'lengthFallback': '长度辅助',
-                'contentLengthOnly': '内容长度', 'veryShortContent': '内容极短',
-                'universalNotFoundKeywords': '通用否定词', 'universalFoundKeywords': '通用肯定词',
-                'universalComparison': '通用比较', 'lengthOnly': '长度判断',
-                'insufficientContent': '内容不足', 'fuzzy-match': '模糊匹配',
-                'manual-verify': '需手工验证'
-            };
-            const methodLabel = methodLabels[result.details.method] || result.details.method;
-            detailHtml = `<span class="method-badge" title="判定方法: ${methodLabel}">${methodLabel}</span>`;
-        }
-
-        let errorMessage = '';
-        if (result.status === 'error' && result.message) {
-            errorMessage = `<div class="result-error">${result.message}</div>`;
-        }
-
-        let detailsInfo = '';
-        if (result.details && !result.status.includes('error')) {
-            const d = result.details;
-            let info = '';
-            if (d.httpStatus) info += `HTTP ${d.httpStatus}`;
-            if (d.proxy) info += ` | ${d.proxy}`;
-            if (d.contentLength) info += ` | ${d.contentLength}字节`;
-            if (d.notFoundMatches && d.notFoundMatches.length > 0) {
-                info += ` | 否定: ${d.notFoundMatches.slice(0, 2).join(', ')}`;
-            }
-            if (d.foundMatches && d.foundMatches.length > 0) {
-                info += ` | 肯定: ${d.foundMatches.slice(0, 2).join(', ')}`;
-            }
-            if (info) detailsInfo = `<div class="result-details">${info}</div>`;
-        }
+        const { linkClass, linkText } = this._getLinkConfig(result, isManualVerify);
 
         item.innerHTML = `
-            <div class="result-status">${statusIcon}</div>
+            <div class="result-status">${this._getStatusIcon(result)}</div>
             <div class="result-content">
                 <div class="result-name">
                     ${result.site.domain}
-                    <span class="result-type">${typeLabel}</span>
-                    ${confidenceHtml}
-                    ${detailHtml}
+                    <span class="result-type">${result.site.type || '未知类型'}</span>
+                    ${this._buildConfidenceBadge(result)}
+                    ${this._buildMethodBadge(result)}
                 </div>
                 <div class="result-url">${result.url}</div>
-                ${detailsInfo}
-                ${errorMessage}
+                ${this._buildDetailsInfo(result)}
+                ${result.status === 'error' && result.message ? `<div class="result-error">${result.message}</div>` : ''}
             </div>
             <a href="${result.url}" target="_blank" rel="noopener noreferrer" class="${linkClass}">${linkText}</a>
         `;
 
-        resultsList.appendChild(item);
+        // 如果当前有筛选条件（非 all），新添加的结果也需遵循筛选条件
+        const currentFilter = this.currentFilter || 'all';
+        if (currentFilter !== 'all') {
+            const itemStatus = item.dataset.status;
+            if (itemStatus !== currentFilter) {
+                item.style.display = 'none';
+            }
+        }
+
+        document.getElementById('resultsList').appendChild(item);
+    }
+
+    _getStatusIcon(result) {
+        if (result.status === 'found') return '✓';
+        if (result.status === 'not-found') return '✗';
+        return '⚠';
+    }
+
+    _getLinkConfig(result, isManualVerify) {
+        if (result.status === 'found') {
+            return { linkClass: 'result-link result-link-found', linkText: '访问主页' };
+        }
+        if (isManualVerify) {
+            return { linkClass: 'result-link result-link-manual', linkText: '手工验证' };
+        }
+        return { linkClass: 'result-link result-link-notfound', linkText: '手工验证' };
+    }
+
+    _buildConfidenceBadge(result) {
+        if (!result.confidence || result.confidence <= 0) return '';
+        const cls = result.confidence >= 80 ? 'confidence-high' :
+                    result.confidence >= 50 ? 'confidence-mid' : 'confidence-low';
+        return `<span class="confidence-badge ${cls}">置信度: ${result.confidence}%</span>`;
+    }
+
+    _buildMethodBadge(result) {
+        if (!result.details || !result.details.method) return '';
+        const METHOD_LABELS = {
+            'http-status': 'HTTP状态码', 'http-status-direct': 'HTTP状态码(直连)',
+            'notFoundKeywords': '未找到关键词', 'foundKeywords': '存在关键词',
+            'keywordComparison': '关键词比较', 'lengthFallback': '长度辅助',
+            'contentLengthOnly': '内容长度', 'veryShortContent': '内容极短',
+            'universalNotFoundKeywords': '通用否定词', 'universalFoundKeywords': '通用肯定词',
+            'universalComparison': '通用比较', 'lengthOnly': '长度判断',
+            'insufficientContent': '内容不足', 'fuzzy-match': '模糊匹配',
+            'manual-verify': '需手工验证'
+        };
+        const label = METHOD_LABELS[result.details.method] || result.details.method;
+        return `<span class="method-badge" title="判定方法: ${label}">${label}</span>`;
+    }
+
+    _buildDetailsInfo(result) {
+        if (!result.details || result.status.includes('error')) return '';
+        const d = result.details;
+        const parts = [];
+        if (d.httpStatus) parts.push(`HTTP ${d.httpStatus}`);
+        if (d.proxy) parts.push(d.proxy);
+        if (d.contentLength) parts.push(`${d.contentLength}字节`);
+        if (d.notFoundMatches && d.notFoundMatches.length > 0) parts.push(`否定: ${d.notFoundMatches.slice(0, 2).join(', ')}`);
+        if (d.foundMatches && d.foundMatches.length > 0) parts.push(`肯定: ${d.foundMatches.slice(0, 2).join(', ')}`);
+        return parts.length > 0 ? `<div class="result-details">${parts.join(' | ')}</div>` : '';
     }
 
     filterResults() {
-        const filter = document.getElementById('filterSelect').value;
+        const filter = this.currentFilter || 'all';
         const items = document.querySelectorAll('.result-item');
         items.forEach(item => {
             item.style.display = (filter === 'all' || item.dataset.status === filter) ? 'flex' : 'none';
@@ -2035,11 +1938,12 @@ class UsernameChecker {
         document.getElementById('progressCount').textContent = `${current}/${total}`;
     }
 
-    updateStats(found, notFound, checked, errors) {
+    updateStats(found, notFound, checked, errors, manualVerify) {
         document.getElementById('foundCount').textContent = found;
         document.getElementById('notFoundCount').textContent = notFound;
         document.getElementById('checkedCount').textContent = checked;
         document.getElementById('errorCount').textContent = errors;
+        document.getElementById('manualVerifyCount').textContent = manualVerify || 0;
     }
 
     resetStats() {
@@ -2047,6 +1951,7 @@ class UsernameChecker {
         document.getElementById('notFoundCount').textContent = '0';
         document.getElementById('checkedCount').textContent = '0';
         document.getElementById('errorCount').textContent = '0';
+        document.getElementById('manualVerifyCount').textContent = '0';
         document.getElementById('progressFill').style.width = '0%';
         document.getElementById('progressText').textContent = '正在搜索...';
         document.getElementById('debugInfo').style.display = 'none';

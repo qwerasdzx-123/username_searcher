@@ -100,25 +100,30 @@
 
             <section class="stats-section" id="statsSection" style="display: none;">
                 <div class="stats-grid">
-                    <div class="stat-card found">
+                    <div class="stat-card found" data-filter="found" title="筛选已注册">
                         <div class="stat-icon">✓</div>
                         <div class="stat-value" id="foundCount">0</div>
                         <div class="stat-label">已注册</div>
                     </div>
-                    <div class="stat-card not-found">
+                    <div class="stat-card not-found" data-filter="not-found" title="筛选未注册">
                         <div class="stat-icon">✗</div>
                         <div class="stat-value" id="notFoundCount">0</div>
                         <div class="stat-label">未注册</div>
                     </div>
-                    <div class="stat-card checked">
+                    <div class="stat-card checked active" data-filter="all" title="显示全部">
                         <div class="stat-icon">📊</div>
                         <div class="stat-value" id="checkedCount">0</div>
                         <div class="stat-label">已检测</div>
                     </div>
-                    <div class="stat-card error">
+                    <div class="stat-card error" data-filter="error" title="筛选失败">
                         <div class="stat-icon">⚠</div>
                         <div class="stat-value" id="errorCount">0</div>
                         <div class="stat-label">检测失败</div>
+                    </div>
+                    <div class="stat-card manual-verify" data-filter="manual-verify" title="筛选需验证">
+                        <div class="stat-icon">❓</div>
+                        <div class="stat-value" id="manualVerifyCount">0</div>
+                        <div class="stat-label">需验证</div>
                     </div>
                 </div>
             </section>
@@ -126,16 +131,6 @@
             <section class="results-section" id="resultsSection" style="display: none;">
                 <div class="results-header">
                     <h2 class="results-title">搜索结果</h2>
-                    <div class="results-actions">
-                        <select id="filterSelect" class="filter-select">
-                            <option value="all">全部</option>
-                            <option value="found">已注册</option>
-                            <option value="not-found">不存在</option>
-                            <option value="manual-verify">需手工验证</option>
-                            <option value="error">错误信息</option>
-                        </select>
-
-                    </div>
                 </div>
                 <div class="results-list" id="resultsList"></div>
             </section>
@@ -143,6 +138,7 @@
         </main>
     </div>
 
+    <script src="shared-constants.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

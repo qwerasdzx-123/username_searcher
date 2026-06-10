@@ -306,6 +306,7 @@ body::before {
     text-align: center;
     box-shadow: var(--shadow);
     transition: all 0.3s ease;
+    cursor: pointer;
 }
 
 .stat-card:hover {
@@ -313,20 +314,48 @@ body::before {
     box-shadow: 0 12px 24px rgba(0, 0, 0, 0.4);
 }
 
+.stat-card.active {
+    transform: translateY(-2px) scale(1.03);
+    box-shadow: 0 8px 20px rgba(99, 102, 241, 0.35);
+}
+
 .stat-card.found {
     border-color: rgba(16, 185, 129, 0.3);
+}
+.stat-card.found.active {
+    border-color: rgba(16, 185, 129, 0.7);
+    box-shadow: 0 8px 20px rgba(16, 185, 129, 0.3);
 }
 
 .stat-card.not-found {
     border-color: rgba(239, 68, 68, 0.3);
 }
+.stat-card.not-found.active {
+    border-color: rgba(239, 68, 68, 0.7);
+    box-shadow: 0 8px 20px rgba(239, 68, 68, 0.3);
+}
 
 .stat-card.checked {
     border-color: rgba(99, 102, 241, 0.3);
 }
+.stat-card.checked.active {
+    border-color: rgba(99, 102, 241, 0.7);
+}
 
 .stat-card.error {
     border-color: rgba(245, 158, 11, 0.3);
+}
+.stat-card.error.active {
+    border-color: rgba(245, 158, 11, 0.7);
+    box-shadow: 0 8px 20px rgba(245, 158, 11, 0.3);
+}
+
+.stat-card.manual-verify {
+    border-color: rgba(168, 85, 247, 0.3);
+}
+.stat-card.manual-verify.active {
+    border-color: rgba(168, 85, 247, 0.7);
+    box-shadow: 0 8px 20px rgba(168, 85, 247, 0.3);
 }
 
 .stat-icon {
@@ -386,26 +415,6 @@ body::before {
 
 .filter-select:focus {
     outline: none;
-    border-color: var(--primary-color);
-}
-
-/* 导出按钮 */
-.export-btn {
-    padding: 0.6rem 1rem;
-    font-size: 0.85rem;
-    font-weight: 500;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background: rgba(99, 102, 241, 0.1);
-    color: var(--primary-hover);
-    cursor: pointer;
-    transition: all 0.3s ease;
-    white-space: nowrap;
-}
-
-.export-btn:hover {
-    background: var(--primary-color);
-    color: white;
     border-color: var(--primary-color);
 }
 
