@@ -1,0 +1,51 @@
+{
+  "sites": {
+    "archive.org": {
+      "url": "https://archive.org/details/@{username}",
+      "checkType": "message",
+      "absenceStrs": [
+        "search engine encountered an error",
+        "might be related to your search query"
+      ],
+      "presenseStrs": [
+        "uploads",
+        "favorites",
+        "reviews"
+      ],
+      "minContentLength": 8000,
+      "notFoundContentLength": 3000
+    },
+    "github.com": {
+      "url": "https://github.com/{username}",
+      "checkType": "message",
+      "absenceStrs": [
+        "not found",
+        "page doesn't exist",
+        "there isn't a github user"
+      ],
+      "presenseStrs": [
+        "repositories",
+        "followers",
+        "contributions in the last year"
+      ],
+      "minContentLength": 3000,
+      "notFoundContentLength": 800
+    },
+    "reddit.com": {
+      "url": "https://www.reddit.com/user/{username}",
+      "checkType": "message",
+      "absenceStrs": [
+        "user not found",
+        "page not found",
+        "sorry, nobody on reddit goes by that name"
+      ],
+      "presenseStrs": [
+        "karma",
+        "cake day",
+        "post karma"
+      ],
+      "minContentLength": 2500,
+      "notFoundContentLength": 600
+    }
+  }
+}

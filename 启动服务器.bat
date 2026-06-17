@@ -11,24 +11,16 @@ for /f "tokens=5" %%a in ('netstat -ano ^| findstr /C:"0.0.0.0:8888" /C:"[::]:88
 echo Done.
 echo.
 echo Starting servers...
-start /B "Proxy-Server" node proxy-server.js >nul 2>&1
-start /B "HTTP-Server" node simple-server.js >nul 2>&1
+start /B "Proxy-Server" node js/proxy-server.js >nul 2>&1
+start /B "HTTP-Server" node js/simple-server.js >nul 2>&1
 echo.
 echo Frontend: http://localhost:8888
 echo Proxy:    POST http://localhost:8899/proxy
 echo ========================================
 echo.
-timeout /t 2 /nobreak >nul
-start http://localhost:8888
-echo All services running.
-echo ========================================
-echo   Press Y to clean up processes and exit.
-echo   Closing window directly may leave ports occupied,
-echo   but they will be auto-cleaned on next startup.
-echo ========================================
-echo.
+echo Waiting for input (Press Y to stop servers)...
 :wait_input
-choice /C YN /N /T 3 /D N >nul
+choice /C YN /N >nul
 if errorlevel 2 goto wait_input
 echo.
 echo Stopping servers...

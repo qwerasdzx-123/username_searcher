@@ -149,19 +149,69 @@ class ProxyManager {
 // 二、网站验证规则配置（可扩展的数据结构）
 // ============================================================
 const VERIFICATION_RULES = {
-    // ============================================================
-    // 各大网站精确规则
-    // ============================================================
+    // 基础规则将作为默认值，动态规则会从 sites-db.json 加载并覆盖
+};
+
+// ============================================================
+// 用户名变体生成器 (Permutator)
+// ============================================================
+class Permutator {
+    constructor(elements) {
+        this.elements = elements;
+        this.separators = ['', '_', '-', '.'];
+    }
+
+    gather(method = 'strict') {
+        const permutations = {};
+        const keys = Object.keys(this.elements);
+        
+        for (let i = 1; i <= keys.length; i++) {
+            this._getCombinations(keys, i).forEach(subset => {
+                if (i === 1) {
+                    if (method === 'all') {
+                        permutations[subset[0]] = this.elements[subset[0]];
+                        permutations['_' + subset[0]] = this.elements[subset[0]];
+                        permutations[subset[0] + '_'] = this.elements[subset[0]];
+                    }
+                } else {
+                    this.separators.forEach(separator => {
+                        const perm = subset.join(separator);
+                        permutations[perm] = this.elements[subset[0]];
+                        if (separator === '') {
+                            permutations['_' + perm] = this.elements[subset[0]];
+                            permutations[perm + '_'] = this.elements[subset[0]];
+                        }
+                    });
+                }
+            });
+        }
+        return permutations;
+    }
+
+    _getCombinations(arr, k) {
+        if (k === 1) return arr.map(e => [e]);
+        const result = [];
+        for (let i = 0; i <= arr.length - k; i++) {
+            const head = arr[i];
+            const tailCombinations = this._getCombinations(arr.slice(i + 1), k - 1);
+            tailCombinations.forEach(tail => result.push([head, ...tail]));
+        }
+        return result;
+    }
+}
+
+// 临时保留部分内置规则作为回退（后续可逐步迁移至 JSON）
+Object.assign(VERIFICATION_RULES, {
     'archive.org': {
-        httpStatus: { directNotFound: [404], directError: [403, 429] },
+        checkType: 'message',
         // 不存在时返回 "The search engine encountered an error, which might be related to your search query"
         // 2024年后 archive.org 改为 SPA，不存在时也返回首页壳子（<app-root>），需 JS 渲染
-        notFoundKeywords: [
+        absenceStrs: [
             'search engine encountered an error', 'might be related to your search query',
             'tips for constructing search queries', 'error, which might be related',
             'no results found', 'could not be found', 'not found'
         ],
-        foundKeywords: [
+        presenseStrs: [
             'uploads', 'favorites', 'reviews', 'forum posts', 'collections',
             'member since', 'items', 'views', 'followers'
         ],
@@ -173,11 +223,12 @@ const VERIFICATION_RULES = {
     },
     'github.com': {
         httpStatus: { directNotFound: [404], directError: [403, 429, 500, 502, 503] },
-        notFoundKeywords: [
+        checkType: 'message',
+        absenceStrs: [
             'not found', 'page doesn\'t exist', 'there isn\'t a github user',
             'this is not the web page you are looking for'
         ],
-        foundKeywords: [
+        presenseStrs: [
             'repositories', 'followers', 'contributions in the last year',
             'joined github', 'overview', 'block or report'
         ],
@@ -187,11 +238,12 @@ const VERIFICATION_RULES = {
     },
     'reddit.com': {
         httpStatus: { directNotFound: [404], directError: [403, 429] },
-        notFoundKeywords: [
+        checkType: 'message',
+        absenceStrs: [
             'user not found', 'page not found', 'sorry, nobody on reddit goes by that name',
             'the person may have been banned', 'this account has been suspended'
         ],
-        foundKeywords: [
+        presenseStrs: [
             'karma', 'cake day', 'post karma', 'comment karma',
             'followers', 'overview', 'comments', 'submitted'
         ],
@@ -953,7 +1005,7 @@ const VERIFICATION_RULES = {
         notFoundContentLength: 600,
         scoreThreshold: 2
     }
-};
+});
 
 
 // ============================================================
@@ -1003,6 +1055,7 @@ class UsernameChecker {
         this.proxyManager = new ProxyManager();
         this.currentUsername = null;  // 当前搜索的用户名，用于检测判断
         this.currentFilter = 'all';  // 当前筛选状态
+        this.permutator = null;      // 用户名变体生成器实例
 
         this.config = {
             batchSize: 3,
@@ -1038,10 +1091,22 @@ class UsernameChecker {
 
     async loadSites() {
         try {
-            const response = await fetch('社交网站及用户页面.json');
+            const response = await fetch('data/社交网站及用户页面.json');
             const data = await response.json();
             this.sites = data.common_sites || [];
             logger.info(`加载网站数据成功: ${this.sites.length} 个网站`);
+
+            // 尝试加载动态验证规则数据库
+            try {
+                const dbResponse = await fetch('data/sites-db.json');
+                if (dbResponse.ok) {
+                    const dbData = await dbResponse.json();
+                    Object.assign(VERIFICATION_RULES, dbData.sites || {});
+                    logger.info(`加载动态验证规则成功: ${Object.keys(dbData.sites || {}).length} 个规则`);
+                }
+            } catch (dbError) {
+                logger.warn('加载动态验证规则失败，使用内置规则', { error: dbError.message });
+            }
         } catch (error) {
             logger.error('加载网站数据失败', { error: error.message });
             throw error;
@@ -1099,6 +1164,32 @@ class UsernameChecker {
             });
         }
 
+        // 变体生成器触发
+        const permuteBtn = document.getElementById('permuteBtn');
+        if (permuteBtn) {
+            permuteBtn.addEventListener('click', () => this.handlePermute());
+        }
+
+        // 主题切换逻辑
+        const themeToggle = document.getElementById('themeToggle');
+        if (themeToggle) {
+            // 初始化：检查本地存储或系统偏好
+            const savedTheme = localStorage.getItem('usernameChecker_theme');
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            
+            if (savedTheme === 'light' || (!savedTheme && !prefersDark)) {
+                document.body.classList.add('light-mode');
+                themeToggle.querySelector('.toggle-icon').textContent = '☀️';
+            }
+
+            themeToggle.addEventListener('click', () => {
+                document.body.classList.toggle('light-mode');
+                const isLight = document.body.classList.contains('light-mode');
+                themeToggle.querySelector('.toggle-icon').textContent = isLight ? '☀️' : '🌙';
+                localStorage.setItem('usernameChecker_theme', isLight ? 'light' : 'dark');
+                logger.info(`主题已切换为: ${isLight ? '浅色模式' : '深色模式'}`);
+            });
+        }
     }
 
     async handleSearch() {
@@ -1108,11 +1199,28 @@ class UsernameChecker {
         }
 
         const usernameInput = document.getElementById('usernameInput');
-        const username = usernameInput.value.trim();
+        let username = usernameInput.value.trim();
 
         if (!username) {
             this.showError('请输入用户名');
             return;
+        }
+
+        // 如果启用了变体生成，先生成变体
+        const usePermute = document.getElementById('usePermute')?.checked;
+        if (usePermute && !username.includes(' ')) {
+            // 简单处理：如果输入包含空格或逗号，则视为多个部分
+            const parts = username.split(/[, ]+/).filter(p => p);
+            if (parts.length > 1) {
+                const elements = {};
+                parts.forEach(p => elements[p] = 'part');
+                this.permutator = new Permutator(elements);
+                const variants = this.permutator.gather('all');
+                logger.info(`生成了 ${Object.keys(variants).length} 个用户名变体`);
+                // 这里可以扩展为批量搜索，目前仅记录日志并提示用户
+                alert(`已生成 ${Object.keys(variants).length} 个变体。请手动选择或稍后支持批量搜索。`);
+                return;
+            }
         }
 
         if (!this.isValidUsername(username)) {
@@ -1273,10 +1381,18 @@ class UsernameChecker {
             result.details = checkResult.details || {};
         } catch (error) {
             if (error.name === 'AbortError') throw error;
-            // 智能判断错误类型，给出友好提示
+            
             const errMsg = error.message || '';
+            // 代理链路故障识别与提示优化
+            const proxyErrors = ['本地代理返回 HTTP 502', 'ECONNREFUSED', '代理连接超时', 'signal timed out'];
+            const isProxyFailure = proxyErrors.some(e => errMsg.includes(e));
+
             if (errMsg.includes('timed out') || errMsg.includes('timeout') || errMsg.includes('TimeoutError')) {
-                result.message = '无法访问（请求超时）- 可能该网站需要代理或网络不通';
+                result.message = isProxyFailure 
+                    ? '代理连接超时 - 请检查代理链路稳定性或更换代理'
+                    : '无法访问（请求超时）- 可能该网站需要代理或网络不通';
+            } else if (isProxyFailure) {
+                result.message = '代理连接失败 - 请更换代理链路或检查网络设置';
             } else if (errMsg.includes('Failed to fetch') || errMsg.includes('NetworkError')) {
                 result.message = '无法访问（网络错误）- 可能被墙或网站不可达';
             } else if (errMsg.includes('所有代理均不可用')) {
@@ -1471,6 +1587,23 @@ class UsernameChecker {
             return _createManualVerifyResult('反爬虫', 'local-proxy', { httpStatus, contentLength });
         }
 
+        // 针对 Instagram/TikTok/Facebook 等 SPA 的 Title 增强检测
+        // 如果页面内容包含用户名，但 Title 明确显示为通用首页标题，则判定为不存在或需验证
+        const titleMatch = lowerText.match(/<title[^>]*>([^<]*)<\/title>/i);
+        if (titleMatch && this.currentUsername) {
+            const title = titleMatch[1].toLowerCase();
+            const escapedU = this.currentUsername.replace(/[.*+?^${}()|\[\]\\]/g, '\\$&');
+            
+            // 如果 Title 是纯品牌名且没有用户名，通常意味着该用户不存在（对于强依赖 Title 的站点）
+            const isGenericTitle = ['instagram', 'tiktok', 'facebook'].some(brand => title === brand || title.includes(brand + ' |'));
+            if (isGenericTitle && !title.includes(this.currentUsername.toLowerCase())) {
+                // 进一步检查：如果内容长度很长但不是 SPA 壳子，可能是登录墙
+                if (contentLength > 5000 && !_isSpaShell(lowerText)) {
+                    return _createManualVerifyResult('登录墙/隐私保护', 'local-proxy', { httpStatus, contentLength, title });
+                }
+            }
+        }
+
         return null;
     }
 
@@ -1578,13 +1711,13 @@ class UsernameChecker {
         if (rules.requireJsRendering) {
             return _createManualVerifyResult('需JS渲染', 'local-proxy', { httpStatus, contentLength });
         }
-
+    
         // 2. Title 用户名检测（如 Instagram/Pinterest：Title 应包含 @username 或纯用户名）
         if (rules.titleContainsUsername && this.currentUsername) {
             const titleMatch = lowerText.match(/<title[^>]*>([^<]*)<\/title>/i);
             if (titleMatch) {
                 const title = titleMatch[1];
-                const escapedU = this.currentUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const escapedU = this.currentUsername.replace(/[.*+?^${}()|\[\]\\]/g, '\\$&');
                 // 支持 @username（Instagram）或纯 username（Pinterest）
                 const usernameInTitle = new RegExp('(@' + escapedU + '|' + escapedU + ')', 'i').test(title);
                 if (!usernameInTitle) {
@@ -1596,23 +1729,29 @@ class UsernameChecker {
                 }
             }
         }
-
+    
         // 3. 收集匹配项
         const { notFoundMatches, foundMatches, isAntiBot, isSpaShell } = this._collectMatches(rules, text, lowerText);
-
+    
         const notFoundScore = notFoundMatches.length;
         const foundScore = foundMatches.length;
         const lengthScore = this.calculateLengthScore(contentLength, rules.minContentLength, rules.notFoundContentLength);
-
-        // 3. 核心判定（传入 text 用于检查用户名是否出现在页面中）
+    
+        // 4. 核心判定（传入 text 用于检查用户名是否出现在页面中）
         let verdict = this._computeVerdict(rules, text, notFoundScore, foundScore, lengthScore);
-
-        // 4. 反爬虫/SPA 降级
+    
+        // 5. 反爬虫/SPA 降级
         verdict = this._applyDegradations(verdict, isAntiBot, isSpaShell);
-
-        // 5. 标题错误兜底
+    
+        // 6. 标题错误兜底
         verdict = this._applyTitleFallback(verdict, lowerText);
-
+    
+        // 7. check_type 逻辑应用 (优先于关键词比较)
+        const checkTypeVerdict = this._applyCheckTypeLogic(rules, httpStatus, text);
+        if (checkTypeVerdict) {
+            verdict = checkTypeVerdict;
+        }
+    
         return {
             found: verdict.found, message: verdict.message, confidence: Math.round(verdict.confidence),
             details: {
@@ -1622,6 +1761,43 @@ class UsernameChecker {
                 method: verdict.method, hasConfiguredRules: true
             }
         };
+    }
+    
+    /**
+     * 应用 Maigret 风格的 check_type 逻辑
+     */
+    _applyCheckTypeLogic(rules, httpStatus, text) {
+        const checkType = rules.checkType || 'message';
+    
+        if (checkType === 'status_code') {
+            if (httpStatus >= 200 && httpStatus < 300) {
+                return { found: true, confidence: 90, method: METHOD.HTTP_STATUS, message: '用户已注册 (HTTP 2xx)' };
+            }
+            return { found: false, confidence: 90, method: METHOD.HTTP_STATUS, message: '用户不存在 (非 2xx)' };
+        }
+    
+        if (checkType === 'response_url') {
+            // 简化实现：如果存在重定向且最终 URL 不包含用户名，则判定为不存在
+            // 在浏览器端难以获取最终 URL，此处主要依赖 HTTP 状态码和重定向处理
+            if (httpStatus >= 300 && httpStatus < 400) {
+                return { found: false, confidence: 80, method: METHOD.MANUAL_VERIFY, message: '需手工验证 (重定向)' };
+            }
+        }
+    
+        // 默认为 'message' 类型，依赖 presense_strs / absence_strs
+        if (checkType === 'message') {
+            const hasPresence = rules.presenseStrs && rules.presenseStrs.some(s => text.includes(s));
+            const hasAbsence = rules.absenceStrs && rules.absenceStrs.some(s => text.includes(s));
+    
+            if (hasAbsence) {
+                return { found: false, confidence: 85, method: METHOD.NOT_FOUND_KEYWORDS, message: '用户不存在 (检测到缺失特征词)' };
+            }
+            if (hasPresence) {
+                return { found: true, confidence: 85, method: METHOD.FOUND_KEYWORDS, message: '用户已注册 (检测到存在特征词)' };
+            }
+        }
+    
+        return null; // 返回 null 表示继续使用原有的关键词比较逻辑
     }
 
     _collectMatches(rules, text, lowerText) {
@@ -1637,9 +1813,12 @@ class UsernameChecker {
         // SPA 壳子检测
         const isSpaShell = _isSpaShell(text);
 
-        // 关键词匹配
-        for (const kw of rules.notFoundKeywords) { if (lowerText.includes(kw)) notFoundMatches.push(kw); }
-        for (const kw of rules.foundKeywords) { if (lowerText.includes(kw)) foundMatches.push(kw); }
+        // 关键词匹配（增加安全检查，兼容 absenceStrs/presenseStrs）
+        const notFoundKws = rules.notFoundKeywords || rules.absenceStrs || [];
+        const foundKws = rules.foundKeywords || rules.presenseStrs || [];
+
+        for (const kw of notFoundKws) { if (lowerText.includes(kw)) notFoundMatches.push(kw); }
+        for (const kw of foundKws) { if (lowerText.includes(kw)) foundMatches.push(kw); }
 
         return { notFoundMatches, foundMatches, isAntiBot, isSpaShell };
     }
@@ -1987,6 +2166,47 @@ class UsernameChecker {
         debugContent.textContent = info;
     }
 
+    exportResults(format) {
+        if (this.results.length === 0) {
+            this.showError('没有可导出的结果');
+            return;
+        }
+
+        let content, filename, mimeType;
+        const timestamp = new Date().toISOString().slice(0, 19).replace(/[: ]/g, '-');
+        const username = this.currentUsername || 'search';
+
+        if (format === 'json') {
+            content = JSON.stringify(this.results, null, 2);
+            filename = `maigret_${username}_${timestamp}.json`;
+            mimeType = 'application/json';
+        } else if (format === 'csv') {
+            const headers = ['Site', 'URL', 'Status', 'Message', 'Confidence'];
+            const rows = this.results.map(r => [
+                r.site.domain,
+                r.url,
+                r.status,
+                r.message,
+                r.confidence
+            ]);
+            content = [headers.join(','), ...rows.map(row => row.map(cell => `"${cell}"`).join(','))].join('\n');
+            filename = `maigret_${username}_${timestamp}.csv`;
+            mimeType = 'text/csv';
+        }
+
+        const blob = new Blob([content], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        logger.info(`结果已导出为 ${format.toUpperCase()} 格式`);
+    }
+
     delay(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
@@ -1995,5 +2215,5 @@ class UsernameChecker {
 
 // 初始化应用
 document.addEventListener('DOMContentLoaded', () => {
-    new UsernameChecker();
+    window.app = new UsernameChecker();
 });

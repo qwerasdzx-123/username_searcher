@@ -3,7 +3,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const BASE = __dirname;
+const BASE = path.join(__dirname, '..');
 const LOG_DIR = path.join(BASE, 'log');
 const MIME = {
     '.html': 'text/html; charset=utf-8',

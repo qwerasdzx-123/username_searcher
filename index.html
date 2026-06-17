@@ -7,17 +7,44 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
+    <!-- 顶部导航栏 -->
+    <nav class="top-nav">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <span class="brand-name">UserSearch Pro</span>
+                <span class="brand-subtitle">OSINT Tracker</span>
+            </div>
+            <div class="nav-links">
+                <a href="https://github.com/qwerasdzx-123" target="_blank" class="nav-link" title="GitHub">
+                    <svg class="social-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>
+                </a>
+                <a href="https://x.com/kalaspace002" target="_blank" class="nav-link" title="X (Twitter)">
+                    <svg class="social-icon" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4l11.733 16h4.267l-11.733 -16z" /><path d="M4 20l6.768 -6.768m2.46 -2.46l6.772 -6.772" /></svg>
+                </a>
+                <button id="themeToggle" class="theme-toggle" title="切换深色/浅色模式">
+                    <span class="toggle-icon">🌙</span>
+                </button>
+            </div>
+        </div>
+    </nav>
+
     <div class="container">
         <header class="header">
             <div class="header-content">
                 <h1 class="title">
-                    <span class="title-icon">🔍</span>
-                    用户名检索工具
+                    <svg class="brand-icon" viewBox="0 0 24 24" width="32" height="32" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path><path d="M2 12h20"></path></svg>
+                    <span class="title-text">
+                        OSINT 全域身份追踪引擎
+                        <span class="subtitle-en">Advanced OSINT Identity Tracker</span>
+                    </span>
                 </h1>
-                <p class="subtitle">快速检测用户名在各社交平台的注册情况</p>
+                <p class="subtitle">
+                    深度检索跨平台数字足迹，精准定位目标身份
+                    <span class="subtitle-en">Deep search for cross-platform digital footprints and precise identity positioning</span>
+                </p>
             </div>
         </header>
 
@@ -28,49 +55,64 @@
                         type="text" 
                         id="usernameInput" 
                         class="search-input" 
-                        placeholder="输入要搜索的用户名..."
+                        placeholder="输入要搜索的用户名... / Enter username..."
                         autocomplete="off"
                     >
                     <button id="searchBtn" class="search-btn">
-                        <span class="btn-text">开始搜索</span>
+                        <span class="btn-text">开始搜索 / Start Search</span>
                         <span class="btn-icon">🚀</span>
                     </button>
                 </div>
                 <div class="search-options">
                     <label class="checkbox-label">
                         <input type="checkbox" id="filterNSFW">
-                        <span class="checkbox-text">过滤成人内容</span>
+                        <span class="checkbox-text">
+                            过滤成人内容
+                            <span class="text-en">Filter NSFW</span>
+                        </span>
                     </label>
                     <label class="checkbox-label">
                         <input type="checkbox" id="onlyPopular" checked>
-                        <span class="checkbox-text">仅显示热门网站</span>
+                        <span class="checkbox-text">
+                            仅显示热门网站
+                            <span class="text-en">Popular Sites Only</span>
+                        </span>
                     </label>
                     <label class="checkbox-label">
                         <input type="checkbox" id="testMode">
-                        <span class="checkbox-text">测试模式（仅测试前5个网站）</span>
+                        <span class="checkbox-text">
+                            测试模式（仅测试前5个网站）
+                            <span class="text-en">Test Mode (First 5)</span>
+                        </span>
                     </label>
                     <!-- 查询模式切换 -->
                     <div class="mode-switch-group">
-                        <span class="mode-label">查询模式:</span>
+                        <span class="mode-label">
+                            查询模式:
+                            <span class="text-en">Query Mode:</span>
+                        </span>
                         <label class="mode-option">
                             <input type="radio" name="searchMode" value="precise" checked>
-                            <span class="mode-text">精准匹配</span>
+                            <span class="mode-text">精准匹配 <span class="text-en">(Precise)</span></span>
                         </label>
                         <label class="mode-option">
                             <input type="radio" name="searchMode" value="fuzzy">
-                            <span class="mode-text">模糊匹配</span>
+                            <span class="mode-text">模糊匹配 <span class="text-en">(Fuzzy)</span></span>
                         </label>
                     </div>
                     <!-- 代理模式切换 -->
                     <div class="mode-switch-group">
-                        <span class="mode-label">代理模式:</span>
+                        <span class="mode-label">
+                            代理模式:
+                            <span class="text-en">Proxy Mode:</span>
+                        </span>
                         <label class="mode-option">
                             <input type="radio" name="proxyMode" value="local-proxy" checked>
-                            <span class="mode-text">本地代理</span>
+                            <span class="mode-text">本地代理 <span class="text-en">(Local)</span></span>
                         </label>
                         <label class="mode-option">
                             <input type="radio" name="proxyMode" value="direct">
-                            <span class="mode-text">直连模式</span>
+                            <span class="mode-text">直连模式 <span class="text-en">(Direct)</span></span>
                         </label>
                     </div>
                     <!-- 并发数设置 -->
@@ -79,6 +121,11 @@
                         <input type="number" id="concurrencyInput" class="concurrency-input" min="1" max="20" value="3" title="设置同时查询的网站数量（1-20），数值越低越稳定">
                         <span class="mode-text" style="font-size:0.75rem;opacity:0.7;">(1-20, 越低越稳)</span>
                     </div>
+                    <!-- 变体生成 -->
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="usePermute">
+                        <span class="checkbox-text">启用变体生成 (输入多个词)</span>
+                    </label>
                 </div>
             </section>
 
@@ -100,37 +147,59 @@
 
             <section class="stats-section" id="statsSection" style="display: none;">
                 <div class="stats-grid">
-                    <div class="stat-card found" data-filter="found" title="筛选已注册">
+                    <div class="stat-card found" data-filter="found" title="筛选已注册 / Filter Found">
                         <div class="stat-icon">✓</div>
                         <div class="stat-value" id="foundCount">0</div>
-                        <div class="stat-label">已注册</div>
+                        <div class="stat-label">
+                            已注册
+                            <span class="text-en">Found</span>
+                        </div>
                     </div>
-                    <div class="stat-card not-found" data-filter="not-found" title="筛选未注册">
+                    <div class="stat-card not-found" data-filter="not-found" title="筛选未注册 / Filter Not Found">
                         <div class="stat-icon">✗</div>
                         <div class="stat-value" id="notFoundCount">0</div>
-                        <div class="stat-label">未注册</div>
+                        <div class="stat-label">
+                            未注册
+                            <span class="text-en">Not Found</span>
+                        </div>
                     </div>
-                    <div class="stat-card checked active" data-filter="all" title="显示全部">
+                    <div class="stat-card checked active" data-filter="all" title="显示全部 / Show All">
                         <div class="stat-icon">📊</div>
                         <div class="stat-value" id="checkedCount">0</div>
-                        <div class="stat-label">已检测</div>
+                        <div class="stat-label">
+                            已检测
+                            <span class="text-en">Checked</span>
+                        </div>
                     </div>
-                    <div class="stat-card error" data-filter="error" title="筛选失败">
+                    <div class="stat-card error" data-filter="error" title="筛选失败 / Filter Errors">
                         <div class="stat-icon">⚠</div>
                         <div class="stat-value" id="errorCount">0</div>
-                        <div class="stat-label">检测失败</div>
+                        <div class="stat-label">
+                            检测失败
+                            <span class="text-en">Errors</span>
+                        </div>
                     </div>
-                    <div class="stat-card manual-verify" data-filter="manual-verify" title="筛选需验证">
+                    <div class="stat-card manual-verify" data-filter="manual-verify" title="筛选需验证 / Filter Manual">
                         <div class="stat-icon">❓</div>
                         <div class="stat-value" id="manualVerifyCount">0</div>
-                        <div class="stat-label">需验证</div>
+                        <div class="stat-label">
+                            需验证
+                            <span class="text-en">Manual</span>
+                        </div>
                     </div>
                 </div>
             </section>
 
             <section class="results-section" id="resultsSection" style="display: none;">
                 <div class="results-header">
-                    <h2 class="results-title">搜索结果</h2>
+                    <h2 class="results-title">
+                        搜索结果
+                        <span class="subtitle-en">Search Results</span>
+                    </h2>
+                    <div class="export-buttons">
+                        <button onclick="window.app.exportResults('json')" class="export-btn json-btn">导出 JSON</button>
+                        <button onclick="window.app.exportResults('csv')" class="export-btn csv-btn">导出 CSV</button>
+                    </div>
                 </div>
                 <div class="results-list" id="resultsList"></div>
             </section>
@@ -138,7 +207,7 @@
         </main>
     </div>
 
-    <script src="shared-constants.js"></script>
-    <script src="app.js"></script>
+    <script src="js/shared-constants.js"></script>
+    <script src="js/app.js"></script>
 </body>
 </html>

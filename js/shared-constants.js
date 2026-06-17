@@ -44,7 +44,10 @@ const SPA_SHELL_PATTERNS = Object.freeze([
 const ANTI_BOT_KEYWORDS = Object.freeze([
     'just a moment', 'enable javascript', 'please enable javascript',
     'client challenge', 'checking your browser', 'ddos protection',
-    'please turn javascript on', 'ctrl+f5', 'ctrl+shift+r'
+    'please turn javascript on', 'ctrl+f5', 'ctrl+shift+r',
+    // 登录墙与反爬虫增强关键词
+    'log in to see more', 'sign up to continue', 'create an account to view',
+    'you must be logged in', 'this content is private'
 ]);
 
 // ============================================================
@@ -111,7 +114,10 @@ function isErrorPage(lowerText) {
         lowerText.includes('sorry, something went wrong') ||
         lowerText.includes('sorry, we couldn\'t find') ||
         lowerText.includes('error occurred') ||
-        (lowerText.includes('<title>error</title>') && lowerText.includes('facebook'))
+        (lowerText.includes('<title>error</title>') && lowerText.includes('facebook')) ||
+        // 针对 Instagram/TikTok 等 SPA 的通用错误页特征
+        lowerText.includes('page isn\'t available') ||
+        lowerText.includes('content not found')
     );
 }
 
